@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MonthCalendar } from "@/components/calendar/MonthCalendar";
+import { MapView } from "@/components/map/MapView";
 import { DEMO_LOCATIONS } from "@/lib/locations";
 
 type User = { id: string; nickname: string };
@@ -31,6 +32,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [busy, setBusy] = useState(false);
   const location = useMemo(() => DEMO_LOCATIONS.find((item) => item.name === locationName) ?? DEMO_LOCATIONS[0], [locationName]);
   const currentUser = users.find((user) => user.id === userId);
+  const conflictState = conflict ? (conflict.hasConflict ? "conflict" : "safe") : "unchecked";
 
   const loadSchedules = useCallback(async () => {
     if (!userId) return setSchedules([]);
@@ -94,10 +96,13 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
       </section>
       <section className="workspace" aria-label="일정 확인 작업 영역">
         <MonthCalendar selectedDate={selectedDate} scheduleCount={schedules.length} onSelectDate={setSelectedDate} />
-        <div className={`result-panel ${conflict?.hasConflict ? "has-conflict" : ""}`}>
-          <p className="eyebrow">ANONYMOUS CHECK</p>
-          <h2>{conflict ? (conflict.hasConflict ? "겹칠 가능성이 있어요" : "현재 조건은 안전해요") : "일정을 입력하고 확인해 보세요"}</h2>
-          {conflict?.hasConflict ? <><div className="risk-badge">위험도 {conflict.riskLevel === "high" ? "높음" : "보통"}</div><p>이 시간대와 지역에서 익명 일정 {conflict.anonymousConflictCount}개와 겹칠 가능성이 있습니다.</p>{conflict.overlapWindow && <div className="overlap-time"><span>충돌 가능 시간</span><strong>{formatMinutes(conflict.overlapWindow.startMinutes)}–{formatMinutes(conflict.overlapWindow.endMinutes)}</strong></div>}<small>누구의 일정인지, 정확히 어디인지와 상세 일정은 공개하지 않습니다.</small></> : conflict ? <><div className="safe-mark">✓</div><p>겹치는 익명 일정이 없습니다. 현재 조건으로 등록할 수 있습니다.</p></> : <p>서버가 날짜·시간·거리 조건을 계산합니다. AI가 임의로 충돌을 판단하지 않습니다.</p>}
+        <div className="map-stack">
+          <MapView locationName={locationName} latitude={location.latitude} longitude={location.longitude} radiusMeters={radiusMeters} conflictState={conflictState} />
+          <div className={`result-panel ${conflict?.hasConflict ? "has-conflict" : ""}`}>
+            <p className="eyebrow">ANONYMOUS CHECK</p>
+            <h2>{conflict ? (conflict.hasConflict ? "겹칠 가능성이 있어요" : "현재 조건은 안전해요") : "일정을 입력하고 확인해 보세요"}</h2>
+            {conflict?.hasConflict ? <><div className="risk-badge">위험도 {conflict.riskLevel === "high" ? "높음" : "보통"}</div><p>이 시간대와 지역에서 익명 일정 {conflict.anonymousConflictCount}개와 겹칠 가능성이 있습니다.</p>{conflict.overlapWindow && <div className="overlap-time"><span>충돌 가능 시간</span><strong>{formatMinutes(conflict.overlapWindow.startMinutes)}–{formatMinutes(conflict.overlapWindow.endMinutes)}</strong></div>}<small>지도 원은 요청한 확인 범위를 표시하며, 타인의 정확한 위치는 포함하지 않습니다.</small></> : conflict ? <><div className="safe-mark">✓</div><p>겹치는 익명 일정이 없습니다. 현재 조건으로 등록할 수 있습니다.</p></> : <p>서버가 날짜·시간·거리 조건을 계산합니다. AI가 임의로 충돌을 판단하지 않습니다.</p>}
+          </div>
         </div>
       </section>
       <section className="schedule-section" aria-labelledby="schedule-title">

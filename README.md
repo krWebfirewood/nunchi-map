@@ -12,8 +12,10 @@
 - 데모 사용자 전환과 날짜별 본인 일정 조회·삭제
 - 직접 입력 일정의 익명 충돌 확인과 안전한 일정 등록
 - 다른 사용자의 신원·장소·좌표를 숨긴 충돌 결과
+- Kakao Maps JavaScript SDK 어댑터와 키 없는 지도 목업 모드
+- 선택 장소 마커, 확인 반경, 충돌 상태에 따른 영역 색상
 
-지도 API와 AI 호출은 아직 구현하지 않았습니다. 일정 저장 직전에는 최신 데이터를 기준으로 트랜잭션 안에서 충돌을 다시 확인합니다.
+Kakao JavaScript 키를 설정하면 실제 지도가 활성화되며, 키가 없거나 SDK 연결에 실패하면 목업 지도가 유지됩니다. AI 호출은 아직 구현하지 않았습니다. 일정 저장 직전에는 최신 데이터를 기준으로 트랜잭션 안에서 충돌을 다시 확인합니다.
 
 ## 설치와 실행
 
@@ -26,6 +28,10 @@ npm run dev
 ```
 
 브라우저에서 `http://localhost:3000`을 엽니다.
+
+### Kakao 지도 활성화
+
+Kakao Developers에서 앱을 만든 뒤 Kakao Map 사용 설정을 켜고 JavaScript 키의 SDK 도메인에 `http://localhost:3000`을 등록합니다. `.env`의 `NEXT_PUBLIC_KAKAO_MAP_KEY`에 JavaScript 키를 넣고 개발 서버를 다시 시작하세요. REST API 키가 아닌 JavaScript 키가 필요합니다.
 
 ## 검증
 
@@ -40,4 +46,4 @@ npm run build
 
 ## 다음 단계
 
-Kakao Maps를 연결해 익명 충돌 영역을 표시한 뒤, Ollama `qwen2.5:7b`를 자연어 분석과 추천 설명에 연결합니다.
+Ollama `qwen2.5:7b`를 자연어 분석과 추천 설명에 연결합니다.
