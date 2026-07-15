@@ -2,7 +2,7 @@ import { createAiClient } from "@/lib/ai/client";
 import { db } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth/session";
 import { generateSafeCandidates } from "@/lib/recommendations/candidates";
-import { findAnonymousConflicts, findScopedSchedules } from "@/lib/schedules/conflicts";
+import { findOwnSchedules, findScheduleConflicts, findScopedSchedules } from "@/lib/schedules/conflicts";
 import { scheduleInputSchema } from "@/lib/schedules/schema";
 
 export async function POST(request: Request) {
@@ -12,11 +12,11 @@ export async function POST(request: Request) {
   const parsed = scheduleInputSchema.safeParse({ ...(typeof body === "object" && body ? body : {}), userId: user.id });
   if (!parsed.success) return Response.json({ message: "추천할 일정 조건을 확인해 주세요." }, { status: 400 });
 
-  const conflict = await findAnonymousConflicts(parsed.data);
+  const conflict = await findScheduleConflicts(parsed.data);
   if (!conflict.hasConflict) return Response.json({ message: "현재 조건에는 충돌이 없어 대안이 필요하지 않습니다." }, { status: 409 });
 
-  const schedules = await findScopedSchedules(parsed.data, db);
-  const candidates = generateSafeCandidates(parsed.data, schedules);
+  const [peerSchedules, ownSchedules] = await Promise.all([findScopedSchedules(parsed.data, db), findOwnSchedules(parsed.data, db)]);
+  const candidates = generateSafeCandidates(parsed.data, peerSchedules, ownSchedules);
   if (candidates.length === 0) return Response.json({
     summary: "현재 날짜 안에서 자동으로 찾은 안전 대안이 없습니다.",
     candidates: [],

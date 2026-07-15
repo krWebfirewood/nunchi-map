@@ -1,10 +1,12 @@
 import type { Prisma, Schedule } from "@prisma/client";
 import { calculateConflict } from "@/lib/conflict/calculateConflict";
+import { hasTimeOverlap } from "@/lib/conflict/timeOverlap";
 import { db } from "@/lib/db";
 import { dateToDatabaseValue, type ScheduleInput } from "./schema";
 
 export interface AnonymousConflictResult {
   hasConflict: boolean;
+  ownScheduleConflict: boolean;
   anonymousConflictCount: number;
   overlapWindow: { startMinutes: number; endMinutes: number } | null;
   riskLevel: "low" | "medium" | "high";
@@ -26,6 +28,10 @@ export async function findScopedSchedules(input: ScheduleInput, client: Prisma.T
   return client.schedule.findMany({ where: { date: dateToDatabaseValue(input.date), userId: { in: peerUserIds } } });
 }
 
+export async function findOwnSchedules(input: ScheduleInput, client: Prisma.TransactionClient | typeof db = db): Promise<Schedule[]> {
+  return client.schedule.findMany({ where: { date: dateToDatabaseValue(input.date), userId: input.userId } });
+}
+
 function overlapWindow(input: ScheduleInput, schedules: Schedule[]): AnonymousConflictResult["overlapWindow"] {
   if (schedules.length === 0) return null;
   return {
@@ -34,9 +40,10 @@ function overlapWindow(input: ScheduleInput, schedules: Schedule[]): AnonymousCo
   };
 }
 
-export async function findAnonymousConflicts(input: ScheduleInput, client: Prisma.TransactionClient | typeof db = db): Promise<AnonymousConflictResult> {
-  const schedules = await findScopedSchedules(input, client);
-  const conflicts = schedules.filter((schedule) => calculateConflict(input, {
+export async function findScheduleConflicts(input: ScheduleInput, client: Prisma.TransactionClient | typeof db = db): Promise<AnonymousConflictResult> {
+  const [ownSchedules, peerSchedules] = await Promise.all([findOwnSchedules(input, client), findScopedSchedules(input, client)]);
+  const ownConflicts = ownSchedules.filter((schedule) => hasTimeOverlap(input, schedule));
+  const anonymousConflicts = peerSchedules.filter((schedule) => calculateConflict(input, {
     date: input.date,
     startMinutes: schedule.startMinutes,
     endMinutes: schedule.endMinutes,
@@ -44,11 +51,13 @@ export async function findAnonymousConflicts(input: ScheduleInput, client: Prism
     longitude: schedule.longitude,
     radiusMeters: schedule.radiusMeters,
   }).isConflict);
-  const count = conflicts.length;
+  const count = anonymousConflicts.length;
+  const ownScheduleConflict = ownConflicts.length > 0;
   return {
-    hasConflict: count > 0,
+    hasConflict: ownScheduleConflict || count > 0,
+    ownScheduleConflict,
     anonymousConflictCount: count,
-    overlapWindow: overlapWindow(input, conflicts),
-    riskLevel: count === 0 ? "low" : count === 1 ? "medium" : "high",
+    overlapWindow: overlapWindow(input, ownScheduleConflict ? ownConflicts : anonymousConflicts),
+    riskLevel: ownScheduleConflict || count > 1 ? "high" : count === 1 ? "medium" : "low",
   };
 }

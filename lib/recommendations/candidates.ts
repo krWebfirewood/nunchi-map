@@ -1,6 +1,7 @@
 import type { Schedule } from "@prisma/client";
 import { calculateConflict } from "@/lib/conflict/calculateConflict";
 import { calculateDistanceMeters } from "@/lib/conflict/distance";
+import { hasTimeOverlap } from "@/lib/conflict/timeOverlap";
 import { DEMO_LOCATIONS } from "@/lib/locations";
 import type { ScheduleInput } from "@/lib/schedules/schema";
 
@@ -19,8 +20,9 @@ export type RecommendationCandidate = {
 
 type ExistingSchedule = Pick<Schedule, "startMinutes" | "endMinutes" | "latitude" | "longitude" | "radiusMeters">;
 
-function isSafe(input: ScheduleInput, schedules: ExistingSchedule[]): boolean {
-  return schedules.every((schedule) => !calculateConflict(input, {
+function isSafe(input: ScheduleInput, peerSchedules: ExistingSchedule[], ownSchedules: ExistingSchedule[]): boolean {
+  if (ownSchedules.some((schedule) => hasTimeOverlap(input, schedule))) return false;
+  return peerSchedules.every((schedule) => !calculateConflict(input, {
     date: input.date,
     startMinutes: schedule.startMinutes,
     endMinutes: schedule.endMinutes,
@@ -34,7 +36,7 @@ function formatMinutes(value: number): string {
   return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 }
 
-export function generateSafeCandidates(input: ScheduleInput, schedules: ExistingSchedule[]): RecommendationCandidate[] {
+export function generateSafeCandidates(input: ScheduleInput, peerSchedules: ExistingSchedule[], ownSchedules: ExistingSchedule[] = []): RecommendationCandidate[] {
   const locationCandidates = DEMO_LOCATIONS
     .filter((location) => location.name !== input.locationName)
     .map((location) => ({
@@ -42,7 +44,7 @@ export function generateSafeCandidates(input: ScheduleInput, schedules: Existing
       distance: calculateDistanceMeters(input, location),
       candidateInput: { ...input, locationName: location.name, latitude: location.latitude, longitude: location.longitude },
     }))
-    .filter(({ candidateInput }) => isSafe(candidateInput, schedules))
+    .filter(({ candidateInput }) => isSafe(candidateInput, peerSchedules, ownSchedules))
     .sort((a, b) => a.distance - b.distance)
     .slice(0, 2)
     .map(({ location, distance, candidateInput }): RecommendationCandidate => ({
@@ -63,7 +65,7 @@ export function generateSafeCandidates(input: ScheduleInput, schedules: Existing
   const timeCandidates: RecommendationCandidate[] = [];
   for (let startMinutes = firstStart; startMinutes + duration <= 1440 && timeCandidates.length < 2; startMinutes += 30) {
     const candidateInput = { ...input, startMinutes, endMinutes: startMinutes + duration };
-    if (!isSafe(candidateInput, schedules)) continue;
+    if (!isSafe(candidateInput, peerSchedules, ownSchedules)) continue;
     timeCandidates.push({
       id: `time:${startMinutes}`,
       type: "time",

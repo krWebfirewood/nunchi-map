@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth/session";
-import { findAnonymousConflicts } from "@/lib/schedules/conflicts";
+import { findScheduleConflicts } from "@/lib/schedules/conflicts";
 import { dateToDatabaseValue, scheduleInputSchema } from "@/lib/schedules/schema";
 
 export async function GET(request: Request) {
@@ -24,12 +24,15 @@ export async function POST(request: Request) {
   const parsed = scheduleInputSchema.safeParse({ ...(typeof body === "object" && body ? body : {}), userId: user.id });
   if (!parsed.success) return Response.json({ message: "입력값을 확인해 주세요.", issues: parsed.error.flatten() }, { status: 400 });
   const result = await db.$transaction(async (transaction) => {
-    const conflict = await findAnonymousConflicts(parsed.data, transaction);
+    const conflict = await findScheduleConflicts(parsed.data, transaction);
     if (conflict.hasConflict) return { conflict, schedule: null };
     const schedule = await transaction.schedule.create({ data: { ...parsed.data, date: dateToDatabaseValue(parsed.data.date) } });
     return { conflict, schedule };
   });
-  if (!result.schedule) return Response.json({ message: "익명 일정과 겹칠 가능성이 있어 저장하지 않았습니다.", conflict: result.conflict }, { status: 409 });
+  if (!result.schedule) return Response.json({
+    message: result.conflict.ownScheduleConflict ? "이미 등록한 내 일정과 시간이 겹쳐 저장하지 않았습니다." : "익명 일정과 겹칠 가능성이 있어 저장하지 않았습니다.",
+    conflict: result.conflict,
+  }, { status: 409 });
   const schedule = result.schedule;
   return Response.json({ schedule }, { status: 201 });
 }

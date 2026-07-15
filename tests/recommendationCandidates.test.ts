@@ -40,4 +40,18 @@ describe("generateSafeCandidates", () => {
 
     expect(candidates).toEqual([]);
   });
+
+  it("내 일정과 시간이 겹치면 장소 변경 후보를 만들지 않는다", () => {
+    const candidates = generateSafeCandidates(input, [], [{
+      startMinutes: 780,
+      endMinutes: 1020,
+      latitude: 37.5572,
+      longitude: 126.9254,
+      radiusMeters: 100,
+    }]);
+
+    expect(candidates.length).toBeGreaterThan(0);
+    expect(candidates.every((candidate) => candidate.type === "time")).toBe(true);
+    expect(candidates.every((candidate) => candidate.startMinutes >= 1020)).toBe(true);
+  });
 });

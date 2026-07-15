@@ -7,7 +7,7 @@ import { DEMO_LOCATIONS } from "@/lib/locations";
 
 type User = { id: string; nickname: string };
 type Schedule = { id: string; startMinutes: number; endMinutes: number; locationName: string; latitude: number; longitude: number; radiusMeters: number };
-type Conflict = { hasConflict: boolean; anonymousConflictCount: number; overlapWindow: { startMinutes: number; endMinutes: number } | null; riskLevel: "low" | "medium" | "high" };
+type Conflict = { hasConflict: boolean; ownScheduleConflict: boolean; anonymousConflictCount: number; overlapWindow: { startMinutes: number; endMinutes: number } | null; riskLevel: "low" | "medium" | "high" };
 type ParsedSchedule = { date: string; startTime: string; endTime: string; locationName: string; radiusMeters: number; assumptions: string[] };
 type RecommendationCandidate = { id: string; type: "location" | "time"; title: string; description: string; locationName: string; latitude: number; longitude: number; startMinutes: number; endMinutes: number; estimatedRisk: "low" };
 type Recommendation = { summary: string; candidates: RecommendationCandidate[]; explainedByAi: boolean };
@@ -86,7 +86,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   useEffect(() => {
     if (!userId) return;
     const controller = new AbortController();
-    void fetch(`/api/schedules?userId=${encodeURIComponent(userId)}&date=${selectedDate}`, { signal: controller.signal })
+    void fetch(`/api/schedules?date=${selectedDate}`, { signal: controller.signal })
       .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
       .then(({ ok, data }) => setSchedules(ok ? data.schedules : []))
       .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === "AbortError")) setSchedules([]); });
@@ -120,7 +120,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     setBusy(false);
     if (response.status === 409) { setConflict(data.conflict); setMessage(data.message); return; }
     if (!response.ok) { setMessage(data.message ?? "일정 저장에 실패했습니다."); return; }
-    setConflict({ hasConflict: false, anonymousConflictCount: 0, overlapWindow: null, riskLevel: "low" });
+    setConflict({ hasConflict: false, ownScheduleConflict: false, anonymousConflictCount: 0, overlapWindow: null, riskLevel: "low" });
     setMessage("일정을 안전하게 등록했습니다.");
     await loadSchedules();
   }
@@ -238,9 +238,9 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         <div className="map-stack">
           <MapView locationName={locationName} latitude={location.latitude} longitude={location.longitude} radiusMeters={radiusMeters} conflictState={conflictState} />
           <div className={`result-panel ${conflict?.hasConflict ? "has-conflict" : ""}`}>
-            <p className="eyebrow">ANONYMOUS CHECK</p>
-            <h2>{conflict ? (conflict.hasConflict ? "겹칠 가능성이 있어요" : "현재 조건은 안전해요") : "일정을 입력하고 확인해 보세요"}</h2>
-            {conflict?.hasConflict ? <><div className="risk-badge">위험도 {conflict.riskLevel === "high" ? "높음" : "보통"}</div><p>이 시간대와 지역에서 익명 일정 {conflict.anonymousConflictCount}개와 겹칠 가능성이 있습니다.</p>{conflict.overlapWindow && <div className="overlap-time"><span>충돌 가능 시간</span><strong>{formatMinutes(conflict.overlapWindow.startMinutes)}–{formatMinutes(conflict.overlapWindow.endMinutes)}</strong></div>}<small>지도 원은 요청한 확인 범위를 표시하며, 타인의 정확한 위치는 포함하지 않습니다.</small></> : conflict ? <><div className="safe-mark">✓</div><p>겹치는 익명 일정이 없습니다. 현재 조건으로 등록할 수 있습니다.</p></> : <p>서버가 날짜·시간·거리 조건을 계산합니다. AI가 임의로 충돌을 판단하지 않습니다.</p>}
+            <p className="eyebrow">SCHEDULE CHECK</p>
+            <h2>{conflict ? (conflict.ownScheduleConflict ? "내 일정과 시간이 겹쳐요" : conflict.hasConflict ? "익명 일정과 겹칠 가능성이 있어요" : "현재 조건은 안전해요") : "일정을 입력하고 확인해 보세요"}</h2>
+            {conflict?.ownScheduleConflict ? <><div className="risk-badge">내 일정 시간 충돌</div><p>같은 날짜에 이미 등록한 내 일정과 시간이 겹칩니다. 한 사람이 동시에 두 장소에 있을 수 없어 장소와 관계없이 등록할 수 없습니다.</p>{conflict.anonymousConflictCount > 0 && <p>같은 시간·지역에서 익명 일정 {conflict.anonymousConflictCount}개와도 겹칠 가능성이 있습니다.</p>}{conflict.overlapWindow && <div className="overlap-time"><span>내 일정과 겹치는 시간</span><strong>{formatMinutes(conflict.overlapWindow.startMinutes)}–{formatMinutes(conflict.overlapWindow.endMinutes)}</strong></div>}<small>시간을 변경하면 다시 안전 여부를 확인할 수 있습니다.</small></> : conflict?.hasConflict ? <><div className="risk-badge">위험도 {conflict.riskLevel === "high" ? "높음" : "보통"}</div><p>이 시간대와 지역에서 익명 일정 {conflict.anonymousConflictCount}개와 겹칠 가능성이 있습니다.</p>{conflict.overlapWindow && <div className="overlap-time"><span>충돌 가능 시간</span><strong>{formatMinutes(conflict.overlapWindow.startMinutes)}–{formatMinutes(conflict.overlapWindow.endMinutes)}</strong></div>}<small>지도 원은 요청한 확인 범위를 표시하며, 타인의 정확한 위치는 포함하지 않습니다.</small></> : conflict ? <><div className="safe-mark">✓</div><p>내 일정 및 익명 일정과 충돌하지 않습니다. 현재 조건으로 등록할 수 있습니다.</p></> : <p>내 일정은 시간 중복을, 익명 일정은 날짜·시간·거리 조건을 계산합니다. AI가 임의로 충돌을 판단하지 않습니다.</p>}
             {conflict?.hasConflict && <button className="recommend-button" type="button" disabled={recommending} onClick={() => void requestRecommendations()}>{recommending ? "안전 후보 계산·설명 중…" : "안전한 대안 추천 받기"}</button>}
             {recommendation && <div className="recommendation-box"><div className="recommendation-heading"><strong>{recommendation.summary}</strong><span>{recommendation.explainedByAi ? "Ollama 설명" : "서버 계산 결과"}</span></div>{recommendation.candidates.length === 0 ? <p>날짜나 확인 반경을 바꾼 뒤 다시 시도해 주세요.</p> : <ul>{recommendation.candidates.map((candidate) => <li key={candidate.id}><div><strong>{candidate.title}</strong><p>{candidate.description}</p></div><button type="button" onClick={() => applyCandidate(candidate)}>적용</button></li>)}</ul>}</div>}
           </div>
@@ -251,11 +251,11 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
           <p className="eyebrow">DIRECT INPUT</p><h2 id="schedule-title">직접 일정 등록</h2>
           <div className="schedule-form">
             <label>날짜<input type="date" value={selectedDate} onChange={(event) => { setSelectedDate(event.target.value); resetCheckResult(); }} /></label>
-            <label>시작 시간<input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} /></label>
-            <label>종료 시간<input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} /></label>
-            <label>장소<select value={locationName} onChange={(event) => setLocationName(event.target.value)}>{DEMO_LOCATIONS.map((item) => <option key={item.name}>{item.name}</option>)}</select></label>
+            <label>시작 시간<input type="time" value={startTime} onChange={(event) => { setStartTime(event.target.value); resetCheckResult(); }} /></label>
+            <label>종료 시간<input type="time" value={endTime} onChange={(event) => { setEndTime(event.target.value); resetCheckResult(); }} /></label>
+            <label>장소<select value={locationName} onChange={(event) => { setLocationName(event.target.value); resetCheckResult(); }}>{DEMO_LOCATIONS.map((item) => <option key={item.name}>{item.name}</option>)}</select></label>
             <label>위도<input value={location.latitude} readOnly /></label><label>경도<input value={location.longitude} readOnly /></label>
-            <label className="radius-field">확인 반경 <strong>{(radiusMeters / 1000).toFixed(1)}km</strong><input type="range" min="100" max="3000" step="100" value={radiusMeters} onChange={(event) => setRadiusMeters(Number(event.target.value))} /></label>
+            <label className="radius-field">확인 반경 <strong>{(radiusMeters / 1000).toFixed(1)}km</strong><input type="range" min="100" max="3000" step="100" value={radiusMeters} onChange={(event) => { setRadiusMeters(Number(event.target.value)); resetCheckResult(); }} /></label>
           </div>
           {message && <p className="form-message" role="status">{message}</p>}
           <div className="form-actions"><button className="secondary-button" type="button" disabled={busy || !userId} onClick={() => void checkConflict()}>{busy ? "확인 중…" : "충돌 먼저 확인"}</button><button className="primary-button" type="button" disabled={busy || !userId} onClick={() => void saveSchedule()}>일정 등록</button></div>
