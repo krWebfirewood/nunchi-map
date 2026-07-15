@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { MonthCalendar } from "@/components/calendar/MonthCalendar";
+import { LocationSearch, type SelectedLocation } from "@/components/map/LocationSearch";
 import { MapView } from "@/components/map/MapView";
 import { DEMO_LOCATIONS } from "@/lib/locations";
 
@@ -43,6 +44,9 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [startTime, setStartTime] = useState("14:00");
   const [endTime, setEndTime] = useState("18:00");
   const [locationName, setLocationName] = useState("영등포");
+  const [locationAddress, setLocationAddress] = useState("영등포 중심");
+  const [latitude, setLatitude] = useState<number>(DEMO_LOCATIONS[0].latitude);
+  const [longitude, setLongitude] = useState<number>(DEMO_LOCATIONS[0].longitude);
   const [radiusMeters, setRadiusMeters] = useState(1500);
   const [conflict, setConflict] = useState<Conflict | null>(null);
   const [message, setMessage] = useState("");
@@ -57,7 +61,6 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [recommending, setRecommending] = useState(false);
   const [explainingRecommendation, setExplainingRecommendation] = useState(false);
   const recommendationRequestRef = useRef<AbortController | null>(null);
-  const location = useMemo(() => DEMO_LOCATIONS.find((item) => item.name === locationName) ?? DEMO_LOCATIONS[0], [locationName]);
   const currentUser = users.find((user) => user.id === userId) ?? (userId ? { id: userId, nickname: sessionNickname } : undefined);
   const conflictState = conflict ? (conflict.hasConflict ? "conflict" : "safe") : "unchecked";
 
@@ -119,7 +122,15 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   }
 
   function requestBody() {
-    return { date: selectedDate, startMinutes: toMinutes(startTime), endMinutes: toMinutes(endTime), locationName, latitude: location.latitude, longitude: location.longitude, radiusMeters };
+    return { date: selectedDate, startMinutes: toMinutes(startTime), endMinutes: toMinutes(endTime), locationName, latitude, longitude, radiusMeters };
+  }
+
+  function selectLocation(location: SelectedLocation) {
+    setLocationName(location.name);
+    setLocationAddress(location.address);
+    setLatitude(location.latitude);
+    setLongitude(location.longitude);
+    resetCheckResult();
   }
 
   async function checkConflict(): Promise<Conflict | null> {
@@ -212,6 +223,12 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     setStartTime(parsed.startTime);
     setEndTime(parsed.endTime);
     setLocationName(parsed.locationName);
+    const knownLocation = DEMO_LOCATIONS.find((item) => item.name === parsed.locationName);
+    if (knownLocation) {
+      setLocationAddress(`${knownLocation.name} 중심`);
+      setLatitude(knownLocation.latitude);
+      setLongitude(knownLocation.longitude);
+    }
     setRadiusMeters(parsed.radiusMeters);
     setAssumptions(parsed.assumptions);
     setConflict(null);
@@ -260,6 +277,9 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   function applyCandidate(candidate: RecommendationCandidate) {
     recommendationRequestRef.current?.abort();
     setLocationName(candidate.locationName);
+    setLocationAddress(`${candidate.locationName} 추천 위치`);
+    setLatitude(candidate.latitude);
+    setLongitude(candidate.longitude);
     setStartTime(formatMinutes(candidate.startMinutes));
     setEndTime(formatMinutes(candidate.endMinutes));
     setConflict(null);
@@ -334,7 +354,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
       <section className="workspace" aria-label="일정 확인 작업 영역">
         <MonthCalendar selectedDate={selectedDate} scheduleCount={schedules.length} onSelectDate={(date) => { setSelectedDate(date); resetCheckResult(); }} />
         <div className="map-stack">
-          <MapView locationName={locationName} latitude={location.latitude} longitude={location.longitude} radiusMeters={radiusMeters} conflictState={conflictState} />
+          <MapView locationName={locationName} latitude={latitude} longitude={longitude} radiusMeters={radiusMeters} conflictState={conflictState} />
           <div className={`result-panel ${conflict?.hasConflict ? "has-conflict" : ""}`}>
             <p className="eyebrow">SCHEDULE CHECK</p>
             <h2>{conflict ? (conflict.ownScheduleConflict ? "내 일정과 시간이 겹쳐요" : conflict.hasConflict ? "익명 일정과 겹칠 가능성이 있어요" : "현재 조건은 안전해요") : "일정을 입력하고 확인해 보세요"}</h2>
@@ -351,8 +371,9 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
             <label>날짜<input type="date" value={selectedDate} onChange={(event) => { setSelectedDate(event.target.value); resetCheckResult(); }} /></label>
             <label>시작 시간<input type="time" value={startTime} onChange={(event) => { setStartTime(event.target.value); resetCheckResult(); }} /></label>
             <label>종료 시간<input type="time" value={endTime} onChange={(event) => { setEndTime(event.target.value); resetCheckResult(); }} /></label>
-            <label>장소<select value={locationName} onChange={(event) => { setLocationName(event.target.value); resetCheckResult(); }}>{DEMO_LOCATIONS.map((item) => <option key={item.name}>{item.name}</option>)}</select></label>
-            <label>위도<input value={location.latitude} readOnly /></label><label>경도<input value={location.longitude} readOnly /></label>
+            <LocationSearch selectedName={locationName} onSelect={selectLocation} />
+            <div className="selected-location"><span>선택한 장소</span><strong>{locationName}</strong><small>{locationAddress}</small></div>
+            <label>위도<input value={latitude} readOnly /></label><label>경도<input value={longitude} readOnly /></label>
             <label className="radius-field">확인 반경 <strong>{(radiusMeters / 1000).toFixed(1)}km</strong><input type="range" min="100" max="3000" step="100" value={radiusMeters} onChange={(event) => { setRadiusMeters(Number(event.target.value)); resetCheckResult(); }} /></label>
           </div>
           {message && <p className="form-message" role="status">{message}</p>}

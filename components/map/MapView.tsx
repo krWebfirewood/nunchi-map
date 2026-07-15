@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { loadKakaoMaps, type KakaoMap, type KakaoOverlay } from "@/lib/kakao/maps";
 
 interface MapViewProps {
   locationName: string;
@@ -8,37 +9,6 @@ interface MapViewProps {
   longitude: number;
   radiusMeters: number;
   conflictState: "unchecked" | "safe" | "conflict";
-}
-
-type KakaoLatLng = object;
-interface KakaoMap { setCenter(position: KakaoLatLng): void; relayout(): void }
-interface KakaoOverlay { setMap(map: KakaoMap | null): void }
-interface KakaoMaps {
-  load(callback: () => void): void;
-  LatLng: new (latitude: number, longitude: number) => KakaoLatLng;
-  Map: new (container: HTMLElement, options: { center: KakaoLatLng; level: number }) => KakaoMap;
-  Marker: new (options: { map: KakaoMap; position: KakaoLatLng }) => KakaoOverlay;
-  Circle: new (options: { map: KakaoMap; center: KakaoLatLng; radius: number; strokeWeight: number; strokeColor: string; strokeOpacity: number; fillColor: string; fillOpacity: number }) => KakaoOverlay;
-}
-
-declare global {
-  interface Window { kakao?: { maps: KakaoMaps } }
-}
-
-let kakaoLoader: Promise<KakaoMaps> | null = null;
-
-function loadKakaoMaps(appKey: string): Promise<KakaoMaps> {
-  if (window.kakao?.maps) return new Promise((resolve) => window.kakao?.maps.load(() => resolve(window.kakao!.maps)));
-  if (kakaoLoader) return kakaoLoader;
-  kakaoLoader = new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(appKey)}&autoload=false`;
-    script.async = true;
-    script.onload = () => window.kakao?.maps.load(() => resolve(window.kakao!.maps));
-    script.onerror = () => reject(new Error("Kakao Maps SDK를 불러오지 못했습니다."));
-    document.head.appendChild(script);
-  });
-  return kakaoLoader;
 }
 
 export function MapView({ locationName, latitude, longitude, radiusMeters, conflictState }: MapViewProps) {
