@@ -1,6 +1,8 @@
 import { ollamaScheduleSchema, parsedScheduleJsonSchema, parsedScheduleSchema, type ParsedSchedule } from "./schemas";
 import { scheduleParserPrompt } from "./prompts";
 import { normalizeParsedSchedule } from "./normalize";
+import { recommendationExplanationJsonSchema, recommendationExplanationSchema, type RecommendationExplanation } from "./recommendationSchemas";
+import type { RecommendationCandidate } from "@/lib/recommendations/candidates";
 
 interface ParseScheduleInput {
   text: string;
@@ -15,6 +17,7 @@ interface OllamaChatResponse {
 
 export interface AiClient {
   parseSchedule(input: ParseScheduleInput): Promise<ParsedSchedule>;
+  explainRecommendations(candidates: RecommendationCandidate[]): Promise<RecommendationExplanation>;
 }
 
 export class AiConnectionError extends Error {}
@@ -63,6 +66,43 @@ class OllamaAiClient implements AiClient {
       return normalizeParsedSchedule(input.text, input.today, parsed);
     } catch {
       throw new AiResponseError("Ollama 응답이 일정 스키마와 일치하지 않습니다.");
+    }
+  }
+
+  async explainRecommendations(candidates: RecommendationCandidate[]): Promise<RecommendationExplanation> {
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: this.model,
+          stream: false,
+          format: recommendationExplanationJsonSchema,
+          keep_alive: "10m",
+          options: { temperature: 0, num_ctx: 1536, num_predict: 220 },
+          messages: [
+            {
+              role: "system",
+              content: "당신은 일정 대안 설명 도우미입니다. 제공된 후보만 사용하세요. id를 바꾸거나 새 후보를 만들지 말고, 개인정보를 추측하지 마세요. 각 설명은 짧은 한국어로 작성하세요.",
+            },
+            { role: "user", content: JSON.stringify(candidates.map(({ id, title, description }) => ({ id, title, description }))) },
+          ],
+        }),
+        signal: AbortSignal.timeout(120_000),
+      });
+    } catch (error) {
+      throw new AiConnectionError(error instanceof Error ? error.message : "Ollama 연결에 실패했습니다.");
+    }
+
+    const payload = await response.json().catch(() => null) as OllamaChatResponse | null;
+    if (!response.ok) throw new AiConnectionError(payload?.error ?? `Ollama 응답 오류 (${response.status})`);
+    if (!payload?.message?.content) throw new AiResponseError("Ollama 추천 설명이 비어 있습니다.");
+
+    try {
+      return recommendationExplanationSchema.parse(JSON.parse(payload.message.content));
+    } catch {
+      throw new AiResponseError("Ollama 추천 설명 형식이 올바르지 않습니다.");
     }
   }
 }

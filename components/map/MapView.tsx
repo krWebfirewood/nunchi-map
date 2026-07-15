@@ -10,7 +10,7 @@ interface MapViewProps {
   conflictState: "unchecked" | "safe" | "conflict";
 }
 
-interface KakaoLatLng {}
+type KakaoLatLng = object;
 interface KakaoMap { setCenter(position: KakaoLatLng): void; relayout(): void }
 interface KakaoOverlay { setMap(map: KakaoMap | null): void }
 interface KakaoMaps {

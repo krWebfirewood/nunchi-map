@@ -63,6 +63,16 @@ button { cursor:pointer; }
 .overlap-time { width:min(100%,420px); margin-top:10px; padding:12px 0; display:flex; justify-content:space-between; border-top:1px solid rgba(22,37,31,.18); border-bottom:1px solid rgba(22,37,31,.18); }
 .overlap-time span { color:var(--muted); font-size:13px; }
 .overlap-time strong { font-family:Georgia,serif; font-size:20px; font-weight:500; }
+.recommend-button { align-self:flex-start; margin-top:16px; min-height:42px; padding:0 15px; border:1px solid var(--ink); color:white; background:var(--ink); }
+.recommend-button:disabled { cursor:wait; opacity:.55; }
+.recommendation-box { width:100%; margin-top:18px; padding-top:16px; border-top:1px solid rgba(22,37,31,.18); }
+.recommendation-heading { display:flex; justify-content:space-between; align-items:start; gap:12px; }
+.recommendation-heading>strong { line-height:1.5; }
+.recommendation-heading>span { flex:0 0 auto; padding:5px 8px; border-radius:999px; color:var(--green); background:rgba(255,255,255,.55); font-size:10px; font-weight:800; }
+.recommendation-box ul { margin:12px 0 0; padding:0; display:grid; gap:8px; list-style:none; }
+.recommendation-box li { padding:12px; display:flex; justify-content:space-between; align-items:center; gap:12px; background:rgba(255,255,255,.55); }
+.recommendation-box li p { margin:4px 0 0; font-size:12px; line-height:1.5; }
+.recommendation-box li button { flex:0 0 auto; min-height:34px; padding:0 11px; border:1px solid var(--green); color:var(--green); background:transparent; font-size:12px; font-weight:800; }
 .schedule-section { margin:0 clamp(20px,5vw,76px) 18px; display:grid; grid-template-columns:minmax(0,1.3fr) minmax(310px,.7fr); gap:18px; }
 .form-card,.schedule-list { padding:clamp(24px,4vw,46px); }
 .form-card h2,.schedule-list h2 { margin:0 0 25px; font-family:Georgia,serif; font-size:clamp(28px,3vw,40px); font-weight:500; }
