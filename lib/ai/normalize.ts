@@ -45,3 +45,22 @@ export function normalizeParsedSchedule(text: string, today: string, parsed: Par
       : parsed.assumptions,
   });
 }
+
+export function createParsedScheduleDraft(text: string, today: string): ParsedSchedule | null {
+  const location = DEMO_LOCATIONS.find((item) => text.includes(item.name));
+  const time = explicitTimeRange(text);
+  const date = relativeWeekday(text, today);
+  if (!location || !time || !date) return null;
+  return parsedScheduleSchema.parse({
+    date,
+    ...time,
+    locationName: location.name,
+    radiusMeters: 1500,
+    preferences: {
+      maxTravelMinutes: null,
+      needsCinema: text.includes("영화") ? true : null,
+      needsCafe: text.includes("카페") ? true : null,
+    },
+    assumptions: ["문장에 명시된 날짜·시간·장소로 만든 빠른 초안입니다."],
+  });
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { MonthCalendar } from "@/components/calendar/MonthCalendar";
 import { MapView } from "@/components/map/MapView";
 import { DEMO_LOCATIONS } from "@/lib/locations";
@@ -25,7 +25,14 @@ function formatMinutes(value: number): string {
 export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [users, setUsers] = useState<User[]>([]);
   const [userId, setUserId] = useState("");
+  const [sessionNickname, setSessionNickname] = useState("");
   const [sessionReady, setSessionReady] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [authLoginId, setAuthLoginId] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authNickname, setAuthNickname] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authMessage, setAuthMessage] = useState("");
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupName, setGroupName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
@@ -42,14 +49,16 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [busy, setBusy] = useState(false);
   const [deletingScheduleId, setDeletingScheduleId] = useState<string | null>(null);
   const [naturalText, setNaturalText] = useState("이번 주 일요일 오후 2시부터 6시까지 영등포에서 영화 보고 싶어");
+  const [draftingSchedule, setDraftingSchedule] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const parsingRequestRef = useRef<AbortController | null>(null);
   const [assumptions, setAssumptions] = useState<string[]>([]);
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [recommending, setRecommending] = useState(false);
   const [explainingRecommendation, setExplainingRecommendation] = useState(false);
   const recommendationRequestRef = useRef<AbortController | null>(null);
   const location = useMemo(() => DEMO_LOCATIONS.find((item) => item.name === locationName) ?? DEMO_LOCATIONS[0], [locationName]);
-  const currentUser = users.find((user) => user.id === userId);
+  const currentUser = users.find((user) => user.id === userId) ?? (userId ? { id: userId, nickname: sessionNickname } : undefined);
   const conflictState = conflict ? (conflict.hasConflict ? "conflict" : "safe") : "unchecked";
 
   const loadSchedules = useCallback(async () => {
@@ -66,6 +75,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     ]).then(([userData, sessionData]) => {
       setUsers(userData.users);
       setUserId(sessionData.user?.id ?? "");
+      setSessionNickname(sessionData.user?.nickname ?? "");
     }).finally(() => setSessionReady(true));
   }, []);
 
@@ -98,10 +108,13 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
 
   function resetCheckResult() {
     recommendationRequestRef.current?.abort();
+    parsingRequestRef.current?.abort();
     setConflict(null);
     setRecommendation(null);
     setRecommending(false);
     setExplainingRecommendation(false);
+    setDraftingSchedule(false);
+    setAnalyzing(false);
     setMessage("");
   }
 
@@ -153,30 +166,56 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
 
   async function analyzeNaturalLanguage() {
     if (naturalText.trim().length < 2) { setMessage("분석할 일정 문장을 입력해 주세요."); return; }
-    setAnalyzing(true); setMessage(""); setAssumptions([]);
+    parsingRequestRef.current?.abort();
+    const controller = new AbortController();
+    parsingRequestRef.current = controller;
+    const body = JSON.stringify({ text: naturalText, today: initialDate, timezone: "Asia/Seoul" });
+    setDraftingSchedule(true); setAnalyzing(false); setMessage(""); setAssumptions([]);
     try {
+      const previewResponse = await fetch("/api/ai/parse-schedule/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        signal: controller.signal,
+      });
+      if (previewResponse.ok) {
+        applyParsedSchedule(await previewResponse.json() as ParsedSchedule);
+        setMessage("빠른 초안을 입력 폼에 반영했습니다. Ollama가 뒤에서 내용을 확인하고 있어요.");
+      }
+      setDraftingSchedule(false);
+      setAnalyzing(true);
+
       const response = await fetch("/api/ai/parse-schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: naturalText, today: initialDate, timezone: "Asia/Seoul" }),
+        body,
+        signal: controller.signal,
       });
       const data = await response.json();
       if (!response.ok) { setMessage(data.message ?? "자연어 일정 분석에 실패했습니다."); return; }
-      const parsed = data as ParsedSchedule;
-      setSelectedDate(parsed.date);
-      setStartTime(parsed.startTime);
-      setEndTime(parsed.endTime);
-      setLocationName(parsed.locationName);
-      setRadiusMeters(parsed.radiusMeters);
-      setAssumptions(parsed.assumptions);
-      setConflict(null);
-      setRecommendation(null);
+      applyParsedSchedule(data as ParsedSchedule);
       setMessage("Ollama 분석 결과를 직접 입력 폼에 반영했습니다. 내용을 확인한 뒤 충돌을 검사하세요.");
-    } catch {
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
       setMessage("Ollama 분석 요청에 실패했습니다. 직접 입력은 계속 사용할 수 있습니다.");
     } finally {
-      setAnalyzing(false);
+      if (parsingRequestRef.current === controller) {
+        setDraftingSchedule(false);
+        setAnalyzing(false);
+        parsingRequestRef.current = null;
+      }
     }
+  }
+
+  function applyParsedSchedule(parsed: ParsedSchedule) {
+    setSelectedDate(parsed.date);
+    setStartTime(parsed.startTime);
+    setEndTime(parsed.endTime);
+    setLocationName(parsed.locationName);
+    setRadiusMeters(parsed.radiusMeters);
+    setAssumptions(parsed.assumptions);
+    setConflict(null);
+    setRecommendation(null);
   }
 
   async function requestRecommendations() {
@@ -234,11 +273,29 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     const data = await response.json();
     if (!response.ok) { setMessage(data.message ?? "로그인에 실패했습니다."); return; }
     setUserId(data.user.id);
+    setSessionNickname(data.user.nickname);
+  }
+
+  async function submitCredentials(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthBusy(true); setAuthMessage("");
+    const endpoint = authMode === "signup" ? "/api/auth/signup" : "/api/auth/login";
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ loginId: authLoginId, password: authPassword, ...(authMode === "signup" ? { nickname: authNickname } : {}) }),
+    });
+    const data = await response.json().catch(() => null) as { message?: string; user?: User } | null;
+    setAuthBusy(false);
+    if (!response.ok || !data?.user) { setAuthMessage(data?.message ?? "로그인 요청에 실패했습니다."); return; }
+    setUserId(data.user.id);
+    setSessionNickname(data.user.nickname);
+    setAuthPassword("");
   }
 
   async function logout() {
     await fetch("/api/session", { method: "DELETE" });
-    setUserId(""); setSchedules([]); setGroups([]); resetCheckResult();
+    setUserId(""); setSessionNickname(""); setSchedules([]); setGroups([]); resetCheckResult();
   }
 
   async function createGroup() {
@@ -261,7 +318,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
 
   if (!sessionReady) return <main className="session-screen"><div className="session-card"><p className="eyebrow">PRIVATE SESSION</p><h1>눈치맵을 준비하고 있어요</h1></div></main>;
 
-  if (!userId) return <main className="session-screen"><section className="session-card"><span className="brand-mark" aria-hidden="true">눈</span><p className="eyebrow">LOCAL DEMO SESSION</p><h1>누구의 일정으로<br />확인할까요?</h1><p>선택한 사용자는 브라우저의 안전한 세션 쿠키에만 저장됩니다.</p><div className="session-users">{users.map((user) => <button key={user.id} type="button" onClick={() => void login(user.id)}><strong>{user.nickname}</strong><span>이 사용자로 시작</span></button>)}</div>{message && <p className="form-message" role="status">{message}</p>}</section></main>;
+  if (!userId) return <main className="session-screen"><section className="session-card"><span className="brand-mark" aria-hidden="true">눈</span><p className="eyebrow">PRIVATE ACCOUNT</p><h1>내 일정으로<br />시작해 볼까요?</h1><div className="auth-tabs"><button type="button" className={authMode === "login" ? "active" : ""} onClick={() => { setAuthMode("login"); setAuthMessage(""); }}>로그인</button><button type="button" className={authMode === "signup" ? "active" : ""} onClick={() => { setAuthMode("signup"); setAuthMessage(""); }}>회원가입</button></div><form className="auth-form" onSubmit={(event) => void submitCredentials(event)}>{authMode === "signup" && <label>닉네임<input value={authNickname} onChange={(event) => setAuthNickname(event.target.value)} minLength={2} maxLength={20} autoComplete="nickname" required /></label>}<label>아이디<input value={authLoginId} onChange={(event) => setAuthLoginId(event.target.value.toLowerCase())} minLength={4} maxLength={24} pattern="[a-z0-9_]+" autoComplete="username" required /></label><label>비밀번호<input type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} minLength={authMode === "signup" ? 8 : 1} maxLength={72} autoComplete={authMode === "signup" ? "new-password" : "current-password"} required /></label><button type="submit" disabled={authBusy}>{authBusy ? "처리 중…" : authMode === "signup" ? "가입하고 시작" : "로그인"}</button></form>{authMessage && <p className="form-message" role="status">{authMessage}</p>}<div className="auth-divider"><span>또는 개발용 데모 계정</span></div><div className="session-users">{users.map((user) => <button key={user.id} type="button" onClick={() => void login(user.id)}><strong>{user.nickname}</strong><span>바로 체험</span></button>)}</div>{message && <p className="form-message" role="status">{message}</p>}</section></main>;
 
   return (
     <main>
@@ -318,8 +375,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
       <section className="composer" aria-labelledby="composer-title">
         <div><p className="eyebrow">LOCAL OLLAMA</p><h2 id="composer-title">말하듯 입력해도 괜찮아요</h2><p>환경변수로 선택한 로컬 Ollama 모델이 문장을 구조화하고, 서버가 결과 형식을 다시 검증합니다.</p></div>
         <div className="ai-composer">
-          <div className="input-shell"><textarea aria-label="자연어 일정" value={naturalText} onChange={(event) => setNaturalText(event.target.value)} rows={3} /><button type="button" disabled={analyzing} onClick={() => void analyzeNaturalLanguage()}>{analyzing ? "분석 중…" : "AI로 분석"}</button></div>
-          {assumptions.length > 0 && <div className="assumption-box"><strong>AI가 적용한 해석</strong><ul>{assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}</ul></div>}
+          <div className="input-shell"><textarea aria-label="자연어 일정" value={naturalText} onChange={(event) => { parsingRequestRef.current?.abort(); setDraftingSchedule(false); setAnalyzing(false); setNaturalText(event.target.value); }} rows={3} /><button type="button" disabled={draftingSchedule || analyzing} onClick={() => void analyzeNaturalLanguage()}>{draftingSchedule ? "초안 만드는 중…" : analyzing ? "초안 표시됨 · AI 확인 중…" : "AI로 분석"}</button></div>
+          {assumptions.length > 0 && <div className="assumption-box"><strong>{analyzing ? "현재 빠른 초안" : "AI가 적용한 해석"}</strong><ul>{assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}</ul></div>}
         </div>
       </section>
       <footer>눈치맵은 사람을 피하는 앱이 아니라, 서로의 개인 시간을 존중하는 익명 동선 조정 서비스입니다.</footer>
