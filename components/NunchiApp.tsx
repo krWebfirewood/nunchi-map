@@ -8,6 +8,7 @@ import { DEMO_LOCATIONS } from "@/lib/locations";
 type User = { id: string; nickname: string };
 type Schedule = { id: string; startMinutes: number; endMinutes: number; locationName: string; latitude: number; longitude: number; radiusMeters: number };
 type Conflict = { hasConflict: boolean; anonymousConflictCount: number; overlapWindow: { startMinutes: number; endMinutes: number } | null; riskLevel: "low" | "medium" | "high" };
+type ParsedSchedule = { date: string; startTime: string; endTime: string; locationName: string; radiusMeters: number; assumptions: string[] };
 
 function toMinutes(value: string): number {
   const [hours, minutes] = value.split(":").map(Number);
@@ -30,6 +31,9 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [conflict, setConflict] = useState<Conflict | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [naturalText, setNaturalText] = useState("이번 주 일요일 오후 2시부터 6시까지 영등포에서 영화 보고 싶어");
+  const [analyzing, setAnalyzing] = useState(false);
+  const [assumptions, setAssumptions] = useState<string[]>([]);
   const location = useMemo(() => DEMO_LOCATIONS.find((item) => item.name === locationName) ?? DEMO_LOCATIONS[0], [locationName]);
   const currentUser = users.find((user) => user.id === userId);
   const conflictState = conflict ? (conflict.hasConflict ? "conflict" : "safe") : "unchecked";
@@ -83,6 +87,33 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     await loadSchedules();
   }
 
+  async function analyzeNaturalLanguage() {
+    if (naturalText.trim().length < 2) { setMessage("분석할 일정 문장을 입력해 주세요."); return; }
+    setAnalyzing(true); setMessage(""); setAssumptions([]);
+    try {
+      const response = await fetch("/api/ai/parse-schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: naturalText, today: initialDate, timezone: "Asia/Seoul" }),
+      });
+      const data = await response.json();
+      if (!response.ok) { setMessage(data.message ?? "자연어 일정 분석에 실패했습니다."); return; }
+      const parsed = data as ParsedSchedule;
+      setSelectedDate(parsed.date);
+      setStartTime(parsed.startTime);
+      setEndTime(parsed.endTime);
+      setLocationName(parsed.locationName);
+      setRadiusMeters(parsed.radiusMeters);
+      setAssumptions(parsed.assumptions);
+      setConflict(null);
+      setMessage("Ollama 분석 결과를 직접 입력 폼에 반영했습니다. 내용을 확인한 뒤 충돌을 검사하세요.");
+    } catch {
+      setMessage("Ollama 분석 요청에 실패했습니다. 직접 입력은 계속 사용할 수 있습니다.");
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
   return (
     <main>
       <header className="site-header">
@@ -124,7 +155,13 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
           {schedules.length === 0 ? <div className="empty-state">이 날짜에 등록한 일정이 없습니다.</div> : <ul>{schedules.map((schedule) => <li key={schedule.id}><div><strong>{formatMinutes(schedule.startMinutes)}–{formatMinutes(schedule.endMinutes)}</strong><span>{schedule.locationName} · 반경 {(schedule.radiusMeters / 1000).toFixed(1)}km</span></div><button type="button" onClick={() => void deleteSchedule(schedule.id)} aria-label={`${schedule.locationName} 일정 삭제`}>삭제</button></li>)}</ul>}
         </aside>
       </section>
-      <section className="composer" aria-labelledby="composer-title"><div><p className="eyebrow">NEXT: OLLAMA</p><h2 id="composer-title">자연어 일정 분석은 다음 단계예요</h2><p>현재 직접 입력과 익명 충돌 계산은 AI 없이 정상 동작합니다. 이후 qwen2.5:7b를 입력 해석과 결과 설명에만 연결합니다.</p></div><div className="input-shell"><input aria-label="자연어 일정" disabled value="이번 주 일요일 오후, 영등포에서 영화 보고 싶어" readOnly /><button type="button" disabled>AI로 분석</button></div></section>
+      <section className="composer" aria-labelledby="composer-title">
+        <div><p className="eyebrow">LOCAL OLLAMA</p><h2 id="composer-title">말하듯 입력해도 괜찮아요</h2><p>로컬 qwen2.5:7b가 문장을 날짜·시간·장소로 바꾸고, 서버가 결과 형식을 다시 검증합니다.</p></div>
+        <div className="ai-composer">
+          <div className="input-shell"><textarea aria-label="자연어 일정" value={naturalText} onChange={(event) => setNaturalText(event.target.value)} rows={3} /><button type="button" disabled={analyzing} onClick={() => void analyzeNaturalLanguage()}>{analyzing ? "분석 중…" : "AI로 분석"}</button></div>
+          {assumptions.length > 0 && <div className="assumption-box"><strong>AI가 적용한 해석</strong><ul>{assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}</ul></div>}
+        </div>
+      </section>
       <footer>눈치맵은 사람을 피하는 앱이 아니라, 서로의 개인 시간을 존중하는 익명 동선 조정 서비스입니다.</footer>
     </main>
   );

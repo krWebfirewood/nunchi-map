@@ -89,9 +89,13 @@ button { cursor:pointer; }
 .composer { margin:0 clamp(20px,5vw,76px) 70px; padding:clamp(26px,4vw,50px); display:grid; grid-template-columns:.8fr 1.2fr; gap:50px; align-items:end; }
 .composer h2 { margin:0 0 10px; font-family:Georgia,serif; font-size:clamp(28px,3vw,43px); font-weight:500; letter-spacing:-.03em; }
 .composer p { color:var(--muted); line-height:1.65; }
+.ai-composer { display:flex; flex-direction:column; gap:12px; }
 .input-shell { display:flex; padding:7px; border:1px solid var(--line); background:white; }
-.input-shell input { min-width:0; flex:1; padding:15px; border:0; color:var(--muted); background:transparent; }
-.input-shell button { border:0; padding:0 20px; color:white; background:var(--ink); opacity:.45; }
+.input-shell textarea { min-width:0; flex:1; padding:15px; resize:vertical; border:0; outline:none; color:var(--ink); background:transparent; line-height:1.6; }
+.input-shell button { flex:0 0 auto; border:0; padding:0 20px; color:white; background:var(--ink); }
+.input-shell button:disabled { cursor:wait; opacity:.55; }
+.assumption-box { padding:14px 16px; border-left:3px solid var(--coral); background:#f7e9e3; font-size:12px; }
+.assumption-box ul { margin:7px 0 0; padding-left:18px; color:var(--muted); line-height:1.6; }
 footer { padding:0 20px 36px; color:var(--muted); text-align:center; font-size:12px; }
 @media (max-width:850px) { .header-copy{display:none}.site-header{justify-content:space-between}.hero{align-items:start;flex-direction:column}.privacy-note{max-width:100%}.workspace,.composer,.schedule-section{grid-template-columns:1fr}.workspace{padding-inline:14px}.schedule-section{margin-inline:14px}.composer{margin-inline:14px;gap:20px}.result-panel{min-height:430px}.schedule-form{grid-template-columns:repeat(2,1fr)} }
 @media (max-width:480px) { .hero{padding-inline:20px}.hero h1{font-size:42px}.calendar-card{padding:18px 12px}.day-grid button{min-height:39px}.selected-date em{display:none}.schedule-form{grid-template-columns:1fr}.form-actions{flex-direction:column}.form-actions button{width:100%} }
