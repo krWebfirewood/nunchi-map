@@ -57,11 +57,20 @@ button:not(:disabled):active { transform:translateY(1px); }
 .weekday-row { padding-bottom:10px; border-bottom:1px solid var(--line); }
 .weekday-row span { text-align:center; color:var(--muted); font-size:11px; }
 .day-grid { gap:4px; padding-top:9px; }
-.day-grid button { aspect-ratio:1; min-height:43px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; border:0; border-radius:50%; background:transparent; color:var(--ink); }
+.day-grid button { position:relative; aspect-ratio:1; min-height:43px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; border:0; border-radius:50%; background:transparent; color:var(--ink); }
 .day-grid button:hover { background:var(--green-soft); }
 .day-grid button.selected { color:white; background:var(--green); }
 .day-grid button.muted { opacity:.3; }
-.day-grid small { font-size:8px; }
+.calendar-day-number { line-height:1; }
+.calendar-status { min-width:24px; height:13px; padding:0 5px; display:inline-flex; align-items:center; justify-content:center; gap:3px; border-radius:999px; color:var(--ink); background:rgba(255,253,247,.9); font-size:8px; font-weight:800; line-height:1; box-shadow:0 0 0 1px rgba(22,37,31,.08); }
+.calendar-status i,.calendar-legend i { width:6px; height:6px; flex:0 0 auto; border-radius:50%; background:var(--green); }
+.calendar-status.medium i,.calendar-legend i.medium { background:#c1842a; }
+.calendar-status.high i,.calendar-legend i.high { background:var(--coral); }
+.calendar-status.private i,.calendar-legend i.private { background:#8a918d; }
+.calendar-today { position:absolute; top:3px; right:50%; translate:50% 0; font-size:7px; font-weight:800; }
+.calendar-status+.calendar-today { right:4px; translate:0 0; }
+.calendar-legend { min-height:24px; margin-top:13px; display:flex; align-items:center; flex-wrap:wrap; gap:7px 12px; color:var(--muted); font-size:9px; }
+.calendar-legend span { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
 .selected-date { display:grid; grid-template-columns:1fr auto; gap:6px; margin-top:22px; padding-top:18px; border-top:1px solid var(--line); }
 .selected-date span { color:var(--muted); font-size:12px; }
 .selected-date strong { grid-column:1; font-family:Georgia,serif; font-size:21px; font-weight:500; }

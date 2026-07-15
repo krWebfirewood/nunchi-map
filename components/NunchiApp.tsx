@@ -43,6 +43,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [groupSchedules, setGroupSchedules] = useState<MapSchedule[]>([]);
+  const [calendarRefreshKey, setCalendarRefreshKey] = useState(0);
   const [startTime, setStartTime] = useState("14:00");
   const [endTime, setEndTime] = useState("18:00");
   const [locationName, setLocationName] = useState("영등포");
@@ -78,6 +79,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     const data = await response.json();
     setSchedules(response.ok ? data.schedules : []);
     setGroupSchedules(response.ok ? data.groupSchedules : []);
+    if (response.ok) setCalendarRefreshKey((value) => value + 1);
   }, [selectedDate, userId]);
 
   useEffect(() => {
@@ -407,7 +409,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     const data = await response.json();
     setGroupBusy(false);
     if (!response.ok) { setGroupMessage(data.message ?? "그룹 생성에 실패했습니다."); return; }
-    setGroupName(""); setGroupMessage(`‘${data.group.name}’ 그룹을 만들었습니다.`); await loadGroups();
+    setGroupName(""); setGroupMessage(`‘${data.group.name}’ 그룹을 만들었습니다.`); await loadGroups(); setCalendarRefreshKey((value) => value + 1);
   }
 
   async function joinGroup() {
@@ -416,7 +418,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     const data = await response.json();
     setGroupBusy(false);
     if (!response.ok) { setGroupMessage(data.message ?? "그룹 참여에 실패했습니다."); return; }
-    setInviteCode(""); setGroupMessage(`‘${data.group.name}’ 그룹에 참여했습니다.`); await loadGroups();
+    setInviteCode(""); setGroupMessage(`‘${data.group.name}’ 그룹에 참여했습니다.`); await loadGroups(); setCalendarRefreshKey((value) => value + 1);
   }
 
   if (!sessionReady) return <main className="session-screen"><div className="session-card"><p className="eyebrow">PRIVATE SESSION</p><h1>눈치맵을 준비하고 있어요</h1></div></main>;
@@ -435,7 +437,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         <aside className="privacy-note"><span className="privacy-icon" aria-hidden="true">✓</span><div><strong>비공개 그룹 공유</strong><p>같은 그룹에는 일정 위치를 표시하지만 사용자 이름은 공개하지 않아요.</p></div></aside>
       </section>
       <section className="workspace" aria-label="일정 확인 작업 영역">
-        <MonthCalendar selectedDate={selectedDate} scheduleCount={schedules.length} onSelectDate={(date) => { setEditingScheduleId(null); setSelectedDate(date); resetCheckResult(); }} />
+        <MonthCalendar key={`${userId}-${selectedDate.slice(0, 7)}`} selectedDate={selectedDate} scheduleCount={schedules.length} refreshKey={calendarRefreshKey} onSelectDate={(date) => { setEditingScheduleId(null); setSelectedDate(date); resetCheckResult(); }} />
         <div className="map-stack">
           <MapView
             locationName={locationName}
