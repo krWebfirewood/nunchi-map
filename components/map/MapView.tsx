@@ -11,6 +11,7 @@ export interface MapSchedule {
   latitude: number;
   longitude: number;
   radiusMeters: number;
+  source: "own" | "group";
 }
 
 interface MapViewProps {
@@ -34,7 +35,7 @@ function overlapsInput(schedule: MapSchedule, startMinutes: number, endMinutes: 
 }
 
 function groupKey(schedule: MapSchedule): string {
-  return `${schedule.latitude.toFixed(5)},${schedule.longitude.toFixed(5)}`;
+  return `${schedule.source}:${schedule.latitude.toFixed(5)},${schedule.longitude.toFixed(5)}`;
 }
 
 export function MapView({
@@ -83,16 +84,17 @@ export function MapView({
         for (const schedule of sortedSchedules) {
           const center = new maps.LatLng(schedule.latitude, schedule.longitude);
           const active = overlapsInput(schedule, inputStartMinutes, inputEndMinutes);
+          const isGroupSchedule = schedule.source === "group";
           overlaysRef.current.push(new maps.Circle({
             map,
             center,
             radius: schedule.radiusMeters,
             strokeWeight: active ? 3 : 2,
-            strokeColor: active ? "#b94f3b" : "#526760",
+            strokeColor: isGroupSchedule ? "#b94f3b" : "#185f48",
             strokeOpacity: active ? 0.95 : 0.42,
             strokeStyle: active ? "solid" : "shortdash",
-            fillColor: active ? "#de765d" : "#83968f",
-            fillOpacity: active ? 0.28 : 0.08,
+            fillColor: isGroupSchedule ? "#de765d" : "#73a98f",
+            fillOpacity: active ? 0.28 : 0.07,
           }));
           const latitudeDelta = schedule.radiusMeters / 111_320;
           const longitudeDelta = schedule.radiusMeters / (111_320 * Math.max(0.2, Math.cos(schedule.latitude * Math.PI / 180)));
@@ -104,9 +106,9 @@ export function MapView({
           const representative = group[0];
           const groupActive = group.some((schedule) => overlapsInput(schedule, inputStartMinutes, inputEndMinutes));
           const label = document.createElement("div");
-          label.className = `day-zone-label ${groupActive ? "active" : "inactive"}`;
+          label.className = `day-zone-label ${representative.source} ${groupActive ? "active" : "inactive"}`;
           const place = document.createElement("strong");
-          place.textContent = representative.locationName;
+          place.textContent = `${representative.source === "group" ? "그룹" : "내 일정"} · ${representative.locationName}`;
           const times = document.createElement("span");
           times.textContent = group.map((schedule) => `${formatMinutes(schedule.startMinutes)}–${formatMinutes(schedule.endMinutes)}`).join(" · ");
           label.append(place, times);
@@ -165,9 +167,9 @@ export function MapView({
     <div className="kakao-map-shell">
       <div ref={containerRef} className="kakao-map" aria-label={viewMode === "day" ? `선택한 날짜의 내 일정 ${schedules.length}개 지도` : `${locationName} Kakao 지도`} />
       {mapControls}
-      <div className="map-mode-badge">Kakao 지도 · 내 일정만 표시</div>
+      <div className="map-mode-badge">Kakao 지도 · 비공개 그룹 공유</div>
       {viewMode === "day" ? (
-        <div className="map-zone-legend"><span><i className="active" />입력 시간과 겹침 {activeScheduleCount}</span><span><i />다른 시간 {schedules.length - activeScheduleCount}</span></div>
+        <div className="map-zone-legend"><span><i className="own" />내 일정 {schedules.filter((schedule) => schedule.source === "own").length}</span><span><i className="group" />그룹 일정 {schedules.filter((schedule) => schedule.source === "group").length}</span><small>진한 원: 입력 시간과 겹침 {activeScheduleCount}</small></div>
       ) : (
         <div className="map-radius-label">확인 반경 {(radiusMeters / 1000).toFixed(1)}km</div>
       )}

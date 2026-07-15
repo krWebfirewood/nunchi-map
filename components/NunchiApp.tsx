@@ -1,14 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { MonthCalendar } from "@/components/calendar/MonthCalendar";
 import { LocationSearch, type SelectedLocation } from "@/components/map/LocationSearch";
-import { MapView } from "@/components/map/MapView";
+import { MapView, type MapSchedule } from "@/components/map/MapView";
 import { DEMO_LOCATIONS } from "@/lib/locations";
 import { searchKakaoPlaces } from "@/lib/kakao/maps";
 
 type User = { id: string; nickname: string };
-type Schedule = { id: string; startMinutes: number; endMinutes: number; locationName: string; latitude: number; longitude: number; radiusMeters: number };
+type Schedule = MapSchedule & { source: "own"; riskLevel: "low" | "medium" | "high" };
 type Conflict = { hasConflict: boolean; ownScheduleConflict: boolean; anonymousConflictCount: number; overlapWindow: { startMinutes: number; endMinutes: number } | null; riskLevel: "low" | "medium" | "high" };
 type ParsedSchedule = { date: string; startTime: string; endTime: string; locationName: string; radiusMeters: number; assumptions: string[] };
 type RecommendationCandidate = { id: string; type: "location" | "time"; title: string; description: string; locationName: string; latitude: number; longitude: number; startMinutes: number; endMinutes: number; estimatedRisk: "low" };
@@ -42,6 +42,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [groupBusy, setGroupBusy] = useState(false);
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [groupSchedules, setGroupSchedules] = useState<MapSchedule[]>([]);
   const [startTime, setStartTime] = useState("14:00");
   const [endTime, setEndTime] = useState("18:00");
   const [locationName, setLocationName] = useState("영등포");
@@ -63,6 +64,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [recommending, setRecommending] = useState(false);
   const [explainingRecommendation, setExplainingRecommendation] = useState(false);
   const recommendationRequestRef = useRef<AbortController | null>(null);
+  const mapSchedules = useMemo(() => [...schedules, ...groupSchedules], [groupSchedules, schedules]);
   const currentUser = users.find((user) => user.id === userId) ?? (userId ? { id: userId, nickname: sessionNickname } : undefined);
   const conflictState = conflict ? (conflict.hasConflict ? "conflict" : "safe") : "unchecked";
 
@@ -71,6 +73,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     const response = await fetch(`/api/schedules?date=${selectedDate}`);
     const data = await response.json();
     setSchedules(response.ok ? data.schedules : []);
+    setGroupSchedules(response.ok ? data.groupSchedules : []);
   }, [selectedDate, userId]);
 
   useEffect(() => {
@@ -106,8 +109,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     const controller = new AbortController();
     void fetch(`/api/schedules?date=${selectedDate}`, { signal: controller.signal })
       .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
-      .then(({ ok, data }) => setSchedules(ok ? data.schedules : []))
-      .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === "AbortError")) setSchedules([]); });
+      .then(({ ok, data }) => { setSchedules(ok ? data.schedules : []); setGroupSchedules(ok ? data.groupSchedules : []); })
+      .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === "AbortError")) { setSchedules([]); setGroupSchedules([]); } });
     return () => controller.abort();
   }, [selectedDate, userId]);
 
@@ -153,8 +156,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     setBusy(false);
     if (response.status === 409) { setConflict(data.conflict); setMessage(data.message); return; }
     if (!response.ok) { setMessage(data.message ?? "일정 저장에 실패했습니다."); return; }
-    setConflict({ hasConflict: false, ownScheduleConflict: false, anonymousConflictCount: 0, overlapWindow: null, riskLevel: "low" });
-    setMessage("일정을 안전하게 등록했습니다.");
+    setConflict(data.conflict);
+    setMessage(data.message);
     await loadSchedules();
   }
 
@@ -346,7 +349,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
 
   async function logout() {
     await fetch("/api/session", { method: "DELETE" });
-    setUserId(""); setSessionNickname(""); setSchedules([]); setGroups([]); resetCheckResult();
+    setUserId(""); setSessionNickname(""); setSchedules([]); setGroupSchedules([]); setGroups([]); resetCheckResult();
   }
 
   async function createGroup() {
@@ -375,12 +378,12 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     <main>
       <header className="site-header">
         <a className="brand" href="#top" aria-label="눈치맵 홈"><span className="brand-mark" aria-hidden="true">눈</span><span>눈치맵</span></a>
-        <div className="header-copy">정확한 위치는 숨기고, 겹침 가능성만 확인해요</div>
+        <div className="header-copy">비공개 그룹 안에서 일정 위치를 공유하고 겹침 가능성을 확인해요</div>
         <div className="session-user"><span>{currentUser?.nickname}</span><button type="button" onClick={() => void logout()}>로그아웃</button></div>
       </header>
       <section className="hero" id="top">
         <div><p className="eyebrow">PRIVATE ROUTE PLANNER</p><h1>마주치고 싶지 않은 날,<br />조금 다르게 움직여요.</h1><p className="hero-description">다른 사람의 이름이나 정확한 일정을 보여주지 않고,<br />선택한 시간과 지역의 익명 겹침 가능성만 알려드립니다.</p></div>
-        <aside className="privacy-note"><span className="privacy-icon" aria-hidden="true">✓</span><div><strong>프라이버시 기본 설계</strong><p>충돌 결과에는 다른 사용자의 신원, 장소명, 좌표를 포함하지 않아요.</p></div></aside>
+        <aside className="privacy-note"><span className="privacy-icon" aria-hidden="true">✓</span><div><strong>비공개 그룹 공유</strong><p>같은 그룹에는 일정 위치를 표시하지만 사용자 이름은 공개하지 않아요.</p></div></aside>
       </section>
       <section className="workspace" aria-label="일정 확인 작업 영역">
         <MonthCalendar selectedDate={selectedDate} scheduleCount={schedules.length} onSelectDate={(date) => { setSelectedDate(date); resetCheckResult(); }} />
@@ -391,15 +394,15 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
             longitude={longitude}
             radiusMeters={radiusMeters}
             conflictState={conflictState}
-            schedules={schedules}
+            schedules={mapSchedules}
             inputStartMinutes={toMinutes(startTime)}
             inputEndMinutes={toMinutes(endTime)}
             selectedDate={selectedDate}
           />
           <div className={`result-panel ${conflict?.hasConflict ? "has-conflict" : ""}`}>
             <p className="eyebrow">SCHEDULE CHECK</p>
-            <h2>{conflict ? (conflict.ownScheduleConflict ? "내 일정과 시간이 겹쳐요" : conflict.hasConflict ? "익명 일정과 겹칠 가능성이 있어요" : "현재 조건은 안전해요") : "일정을 입력하고 확인해 보세요"}</h2>
-            {conflict?.ownScheduleConflict ? <><div className="risk-badge">내 일정 시간 충돌</div><p>같은 날짜에 이미 등록한 내 일정과 시간이 겹칩니다. 한 사람이 동시에 두 장소에 있을 수 없어 장소와 관계없이 등록할 수 없습니다.</p>{conflict.anonymousConflictCount > 0 && <p>같은 시간·지역에서 익명 일정 {conflict.anonymousConflictCount}개와도 겹칠 가능성이 있습니다.</p>}{conflict.overlapWindow && <div className="overlap-time"><span>내 일정과 겹치는 시간</span><strong>{formatMinutes(conflict.overlapWindow.startMinutes)}–{formatMinutes(conflict.overlapWindow.endMinutes)}</strong></div>}<small>시간을 변경하면 다시 안전 여부를 확인할 수 있습니다.</small></> : conflict?.hasConflict ? <><div className="risk-badge">위험도 {conflict.riskLevel === "high" ? "높음" : "보통"}</div><p>이 시간대와 지역에서 익명 일정 {conflict.anonymousConflictCount}개와 겹칠 가능성이 있습니다.</p>{conflict.overlapWindow && <div className="overlap-time"><span>충돌 가능 시간</span><strong>{formatMinutes(conflict.overlapWindow.startMinutes)}–{formatMinutes(conflict.overlapWindow.endMinutes)}</strong></div>}<small>지도 원은 요청한 확인 범위를 표시하며, 타인의 정확한 위치는 포함하지 않습니다.</small></> : conflict ? <><div className="safe-mark">✓</div><p>내 일정 및 익명 일정과 충돌하지 않습니다. 현재 조건으로 등록할 수 있습니다.</p></> : <p>내 일정은 시간 중복을, 익명 일정은 날짜·시간·거리 조건을 계산합니다. AI가 임의로 충돌을 판단하지 않습니다.</p>}
+            <h2>{conflict ? (conflict.ownScheduleConflict ? "내 일정과 시간이 겹쳐요" : conflict.hasConflict ? "그룹 일정과 겹칠 가능성이 있어요" : "현재 조건은 안전해요") : "일정을 입력하고 확인해 보세요"}</h2>
+            {conflict?.ownScheduleConflict ? <><div className="risk-badge">내 일정 시간 충돌</div><p>같은 날짜에 이미 등록한 내 일정과 시간이 겹칩니다. 한 사람이 동시에 두 장소에 있을 수 없어 장소와 관계없이 등록할 수 없습니다.</p>{conflict.anonymousConflictCount > 0 && <p>같은 시간·지역에서 그룹 일정 {conflict.anonymousConflictCount}개와도 겹칠 가능성이 있습니다.</p>}{conflict.overlapWindow && <div className="overlap-time"><span>내 일정과 겹치는 시간</span><strong>{formatMinutes(conflict.overlapWindow.startMinutes)}–{formatMinutes(conflict.overlapWindow.endMinutes)}</strong></div>}<small>시간을 변경하면 다시 등록할 수 있습니다.</small></> : conflict?.hasConflict ? <><div className="risk-badge">충돌 가능성 {conflict.riskLevel === "high" ? "높음" : "보통"}</div><p>이 시간대와 지역에서 그룹 일정 {conflict.anonymousConflictCount}개와 겹칠 가능성이 있습니다. 경고를 확인한 뒤에도 일정은 등록할 수 있습니다.</p>{conflict.overlapWindow && <div className="overlap-time"><span>충돌 가능 시간</span><strong>{formatMinutes(conflict.overlapWindow.startMinutes)}–{formatMinutes(conflict.overlapWindow.endMinutes)}</strong></div>}<small>같은 그룹의 일정 위치는 지도에 표시되지만 사용자 이름은 숨겨집니다.</small></> : conflict ? <><div className="safe-mark">✓</div><p>내 일정 및 그룹 일정과 충돌하지 않습니다. 현재 조건으로 등록할 수 있습니다.</p></> : <p>내 일정은 시간 중복을, 그룹 일정은 날짜·시간·거리 조건을 계산합니다. 그룹 충돌은 경고로 표시되며 등록을 막지 않습니다.</p>}
             {conflict?.hasConflict && <button className="recommend-button" type="button" disabled={recommending || explainingRecommendation} onClick={() => void requestRecommendations()}>{recommending ? "안전 후보 계산 중…" : explainingRecommendation ? "후보 표시됨 · AI 설명 중…" : "안전한 대안 추천 받기"}</button>}
             {recommendation && <div className="recommendation-box"><div className="recommendation-heading"><strong>{recommendation.summary}</strong><span className={explainingRecommendation ? "is-loading" : ""}>{explainingRecommendation ? "Ollama 설명 준비 중…" : recommendation.explainedByAi ? "Ollama 설명" : "서버 계산 결과"}</span></div>{recommendation.candidates.length === 0 ? <p>날짜나 확인 반경을 바꾼 뒤 다시 시도해 주세요.</p> : <ul>{recommendation.candidates.map((candidate) => <li key={candidate.id}><div><strong>{candidate.title}</strong><p>{candidate.description}</p></div><button type="button" onClick={() => applyCandidate(candidate)}>적용</button></li>)}</ul>}</div>}
           </div>
@@ -422,11 +425,11 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         </div>
         <aside className="schedule-list">
           <div><p className="eyebrow">MY SCHEDULES</p><h2>{currentUser?.nickname ?? "사용자"}님의 일정</h2><p>{selectedDate}</p></div>
-          {schedules.length === 0 ? <div className="empty-state">이 날짜에 등록한 일정이 없습니다.</div> : <ul>{schedules.map((schedule) => <li key={schedule.id}><div><strong>{formatMinutes(schedule.startMinutes)}–{formatMinutes(schedule.endMinutes)}</strong><span>{schedule.locationName} · 반경 {(schedule.radiusMeters / 1000).toFixed(1)}km</span></div><button type="button" disabled={deletingScheduleId !== null} onClick={() => void deleteSchedule(schedule.id)} aria-label={`${schedule.locationName} 일정 삭제`}>{deletingScheduleId === schedule.id ? "삭제 중…" : "삭제"}</button></li>)}</ul>}
+          {schedules.length === 0 ? <div className="empty-state">이 날짜에 등록한 일정이 없습니다.</div> : <ul>{schedules.map((schedule) => <li key={schedule.id} className={schedule.riskLevel !== "low" ? "has-risk" : ""}><div><strong>{formatMinutes(schedule.startMinutes)}–{formatMinutes(schedule.endMinutes)}</strong><span>{schedule.locationName} · 반경 {(schedule.radiusMeters / 1000).toFixed(1)}km</span>{schedule.riskLevel !== "low" && <em>충돌 가능성 {schedule.riskLevel === "high" ? "높음" : "보통"}</em>}</div><button type="button" disabled={deletingScheduleId !== null} onClick={() => void deleteSchedule(schedule.id)} aria-label={`${schedule.locationName} 일정 삭제`}>{deletingScheduleId === schedule.id ? "삭제 중…" : "삭제"}</button></li>)}</ul>}
         </aside>
       </section>
       <section className="group-section" aria-labelledby="group-title">
-        <div><p className="eyebrow">PRIVATE GROUPS</p><h2 id="group-title">충돌 확인 범위를 그룹으로 관리해요</h2><p>같은 비공개 그룹에 참여한 구성원의 일정만 익명으로 비교합니다. 구성원 이름이나 상세 일정은 표시하지 않습니다.</p></div>
+        <div><p className="eyebrow">PRIVATE GROUPS</p><h2 id="group-title">충돌 확인 범위를 그룹으로 관리해요</h2><p>같은 비공개 그룹 구성원의 일정 위치와 시간은 지도에 공유됩니다. 사용자 이름은 표시하지 않습니다.</p></div>
         <div className="group-tools">
           <div className="group-form"><label>새 그룹 이름<input value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="예: 디자인팀 주말" /></label><button type="button" disabled={groupBusy} onClick={() => void createGroup()}>그룹 만들기</button></div>
           <div className="group-form"><label>초대 코드<input value={inviteCode} onChange={(event) => setInviteCode(event.target.value.toUpperCase())} placeholder="예: NUNCHI" /></label><button type="button" disabled={groupBusy} onClick={() => void joinGroup()}>그룹 참여</button></div>

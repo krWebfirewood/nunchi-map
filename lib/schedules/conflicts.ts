@@ -12,20 +12,28 @@ export interface AnonymousConflictResult {
   riskLevel: "low" | "medium" | "high";
 }
 
+export function shouldBlockScheduleCreation(conflict: AnonymousConflictResult): boolean {
+  return conflict.ownScheduleConflict;
+}
+
 export function uniquePeerUserIds(currentUserId: string, memberUserIds: string[]): string[] {
   return [...new Set(memberUserIds)].filter((userId) => userId !== currentUserId);
 }
 
-export async function findScopedSchedules(input: ScheduleInput, client: Prisma.TransactionClient | typeof db = db): Promise<Schedule[]> {
-  const memberships = await client.groupMember.findMany({ where: { userId: input.userId }, select: { groupId: true } });
+export async function findScopedSchedulesForDate(userId: string, date: string, client: Prisma.TransactionClient | typeof db = db): Promise<Schedule[]> {
+  const memberships = await client.groupMember.findMany({ where: { userId }, select: { groupId: true } });
   const groupIds = memberships.map(({ groupId }) => groupId);
   const peerMemberships = groupIds.length === 0 ? [] : await client.groupMember.findMany({
     where: { groupId: { in: groupIds } },
     select: { userId: true },
   });
-  const peerUserIds = uniquePeerUserIds(input.userId, peerMemberships.map(({ userId }) => userId));
+  const peerUserIds = uniquePeerUserIds(userId, peerMemberships.map(({ userId }) => userId));
   if (peerUserIds.length === 0) return [];
-  return client.schedule.findMany({ where: { date: dateToDatabaseValue(input.date), userId: { in: peerUserIds } } });
+  return client.schedule.findMany({ where: { date: dateToDatabaseValue(date), userId: { in: peerUserIds } }, orderBy: { startMinutes: "asc" } });
+}
+
+export async function findScopedSchedules(input: ScheduleInput, client: Prisma.TransactionClient | typeof db = db): Promise<Schedule[]> {
+  return findScopedSchedulesForDate(input.userId, input.date, client);
 }
 
 export async function findOwnSchedules(input: ScheduleInput, client: Prisma.TransactionClient | typeof db = db): Promise<Schedule[]> {
@@ -40,10 +48,8 @@ function overlapWindow(input: ScheduleInput, schedules: Schedule[]): AnonymousCo
   };
 }
 
-export async function findScheduleConflicts(input: ScheduleInput, client: Prisma.TransactionClient | typeof db = db): Promise<AnonymousConflictResult> {
-  const [ownSchedules, peerSchedules] = await Promise.all([findOwnSchedules(input, client), findScopedSchedules(input, client)]);
-  const ownConflicts = ownSchedules.filter((schedule) => hasTimeOverlap(input, schedule));
-  const anonymousConflicts = peerSchedules.filter((schedule) => calculateConflict(input, {
+export function findPeerScheduleConflicts(input: ScheduleInput, schedules: Schedule[]): Schedule[] {
+  return schedules.filter((schedule) => calculateConflict(input, {
     date: input.date,
     startMinutes: schedule.startMinutes,
     endMinutes: schedule.endMinutes,
@@ -51,6 +57,12 @@ export async function findScheduleConflicts(input: ScheduleInput, client: Prisma
     longitude: schedule.longitude,
     radiusMeters: schedule.radiusMeters,
   }).isConflict);
+}
+
+export async function findScheduleConflicts(input: ScheduleInput, client: Prisma.TransactionClient | typeof db = db): Promise<AnonymousConflictResult> {
+  const [ownSchedules, peerSchedules] = await Promise.all([findOwnSchedules(input, client), findScopedSchedules(input, client)]);
+  const ownConflicts = ownSchedules.filter((schedule) => hasTimeOverlap(input, schedule));
+  const anonymousConflicts = findPeerScheduleConflicts(input, peerSchedules);
   const count = anonymousConflicts.length;
   const ownScheduleConflict = ownConflicts.length > 0;
   return {
