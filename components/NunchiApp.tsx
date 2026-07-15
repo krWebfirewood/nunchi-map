@@ -11,6 +11,7 @@ type Conflict = { hasConflict: boolean; anonymousConflictCount: number; overlapW
 type ParsedSchedule = { date: string; startTime: string; endTime: string; locationName: string; radiusMeters: number; assumptions: string[] };
 type RecommendationCandidate = { id: string; type: "location" | "time"; title: string; description: string; locationName: string; latitude: number; longitude: number; startMinutes: number; endMinutes: number; estimatedRisk: "low" };
 type Recommendation = { summary: string; candidates: RecommendationCandidate[]; explainedByAi: boolean };
+type Group = { id: string; name: string; inviteCode: string; memberCount: number };
 
 function toMinutes(value: string): number {
   const [hours, minutes] = value.split(":").map(Number);
@@ -24,6 +25,12 @@ function formatMinutes(value: number): string {
 export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [users, setUsers] = useState<User[]>([]);
   const [userId, setUserId] = useState("");
+  const [sessionReady, setSessionReady] = useState(false);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [groupName, setGroupName] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
+  const [groupMessage, setGroupMessage] = useState("");
+  const [groupBusy, setGroupBusy] = useState(false);
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [startTime, setStartTime] = useState("14:00");
@@ -44,17 +51,37 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
 
   const loadSchedules = useCallback(async () => {
     if (!userId) return;
-    const response = await fetch(`/api/schedules?userId=${encodeURIComponent(userId)}&date=${selectedDate}`);
+    const response = await fetch(`/api/schedules?date=${selectedDate}`);
     const data = await response.json();
     setSchedules(response.ok ? data.schedules : []);
   }, [selectedDate, userId]);
 
   useEffect(() => {
-    fetch("/api/users").then((response) => response.json()).then((data: { users: User[] }) => {
-      setUsers(data.users);
-      setUserId((current) => current || data.users[0]?.id || "");
-    });
+    void Promise.all([
+      fetch("/api/users").then((response) => response.json()) as Promise<{ users: User[] }>,
+      fetch("/api/session").then((response) => response.json()) as Promise<{ user: User | null }>,
+    ]).then(([userData, sessionData]) => {
+      setUsers(userData.users);
+      setUserId(sessionData.user?.id ?? "");
+    }).finally(() => setSessionReady(true));
   }, []);
+
+  const loadGroups = useCallback(async () => {
+    if (!userId) return setGroups([]);
+    const response = await fetch("/api/groups");
+    const data = await response.json();
+    setGroups(response.ok ? data.groups : []);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    const controller = new AbortController();
+    void fetch("/api/groups", { signal: controller.signal })
+      .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+      .then(({ ok, data }) => setGroups(ok ? data.groups : []))
+      .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === "AbortError")) setGroups([]); });
+    return () => controller.abort();
+  }, [userId]);
 
   useEffect(() => {
     if (!userId) return;
@@ -73,7 +100,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   }
 
   function requestBody() {
-    return { userId, date: selectedDate, startMinutes: toMinutes(startTime), endMinutes: toMinutes(endTime), locationName, latitude: location.latitude, longitude: location.longitude, radiusMeters };
+    return { date: selectedDate, startMinutes: toMinutes(startTime), endMinutes: toMinutes(endTime), locationName, latitude: location.latitude, longitude: location.longitude, radiusMeters };
   }
 
   async function checkConflict(): Promise<Conflict | null> {
@@ -99,7 +126,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   }
 
   async function deleteSchedule(id: string) {
-    const response = await fetch(`/api/schedules/${id}?userId=${encodeURIComponent(userId)}`, { method: "DELETE" });
+    const response = await fetch(`/api/schedules/${id}`, { method: "DELETE" });
     if (!response.ok) { const data = await response.json(); setMessage(data.message ?? "삭제에 실패했습니다."); return; }
     setMessage("내 일정을 삭제했습니다.");
     await loadSchedules();
@@ -160,12 +187,47 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     setMessage(`‘${candidate.title}’ 대안을 입력 폼에 반영했습니다. 충돌을 다시 확인해 주세요.`);
   }
 
+  async function login(selectedUserId: string) {
+    setMessage("");
+    const response = await fetch("/api/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: selectedUserId }) });
+    const data = await response.json();
+    if (!response.ok) { setMessage(data.message ?? "로그인에 실패했습니다."); return; }
+    setUserId(data.user.id);
+  }
+
+  async function logout() {
+    await fetch("/api/session", { method: "DELETE" });
+    setUserId(""); setSchedules([]); setGroups([]); resetCheckResult();
+  }
+
+  async function createGroup() {
+    setGroupBusy(true); setGroupMessage("");
+    const response = await fetch("/api/groups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: groupName }) });
+    const data = await response.json();
+    setGroupBusy(false);
+    if (!response.ok) { setGroupMessage(data.message ?? "그룹 생성에 실패했습니다."); return; }
+    setGroupName(""); setGroupMessage(`‘${data.group.name}’ 그룹을 만들었습니다.`); await loadGroups();
+  }
+
+  async function joinGroup() {
+    setGroupBusy(true); setGroupMessage("");
+    const response = await fetch("/api/groups/join", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ inviteCode }) });
+    const data = await response.json();
+    setGroupBusy(false);
+    if (!response.ok) { setGroupMessage(data.message ?? "그룹 참여에 실패했습니다."); return; }
+    setInviteCode(""); setGroupMessage(`‘${data.group.name}’ 그룹에 참여했습니다.`); await loadGroups();
+  }
+
+  if (!sessionReady) return <main className="session-screen"><div className="session-card"><p className="eyebrow">PRIVATE SESSION</p><h1>눈치맵을 준비하고 있어요</h1></div></main>;
+
+  if (!userId) return <main className="session-screen"><section className="session-card"><span className="brand-mark" aria-hidden="true">눈</span><p className="eyebrow">LOCAL DEMO SESSION</p><h1>누구의 일정으로<br />확인할까요?</h1><p>선택한 사용자는 브라우저의 안전한 세션 쿠키에만 저장됩니다.</p><div className="session-users">{users.map((user) => <button key={user.id} type="button" onClick={() => void login(user.id)}><strong>{user.nickname}</strong><span>이 사용자로 시작</span></button>)}</div>{message && <p className="form-message" role="status">{message}</p>}</section></main>;
+
   return (
     <main>
       <header className="site-header">
         <a className="brand" href="#top" aria-label="눈치맵 홈"><span className="brand-mark" aria-hidden="true">눈</span><span>눈치맵</span></a>
         <div className="header-copy">정확한 위치는 숨기고, 겹침 가능성만 확인해요</div>
-        <label className="user-switcher"><span className="sr-only">데모 사용자</span><select value={userId} onChange={(event) => { setUserId(event.target.value); resetCheckResult(); }}>{users.map((user) => <option key={user.id} value={user.id}>{user.nickname}</option>)}</select></label>
+        <div className="session-user"><span>{currentUser?.nickname}</span><button type="button" onClick={() => void logout()}>로그아웃</button></div>
       </header>
       <section className="hero" id="top">
         <div><p className="eyebrow">PRIVATE ROUTE PLANNER</p><h1>마주치고 싶지 않은 날,<br />조금 다르게 움직여요.</h1><p className="hero-description">다른 사람의 이름이나 정확한 일정을 보여주지 않고,<br />선택한 시간과 지역의 익명 겹침 가능성만 알려드립니다.</p></div>
@@ -202,6 +264,15 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
           <div><p className="eyebrow">MY SCHEDULES</p><h2>{currentUser?.nickname ?? "사용자"}님의 일정</h2><p>{selectedDate}</p></div>
           {schedules.length === 0 ? <div className="empty-state">이 날짜에 등록한 일정이 없습니다.</div> : <ul>{schedules.map((schedule) => <li key={schedule.id}><div><strong>{formatMinutes(schedule.startMinutes)}–{formatMinutes(schedule.endMinutes)}</strong><span>{schedule.locationName} · 반경 {(schedule.radiusMeters / 1000).toFixed(1)}km</span></div><button type="button" onClick={() => void deleteSchedule(schedule.id)} aria-label={`${schedule.locationName} 일정 삭제`}>삭제</button></li>)}</ul>}
         </aside>
+      </section>
+      <section className="group-section" aria-labelledby="group-title">
+        <div><p className="eyebrow">PRIVATE GROUPS</p><h2 id="group-title">충돌 확인 범위를 그룹으로 관리해요</h2><p>같은 비공개 그룹에 참여한 구성원의 일정만 익명으로 비교합니다. 구성원 이름이나 상세 일정은 표시하지 않습니다.</p></div>
+        <div className="group-tools">
+          <div className="group-form"><label>새 그룹 이름<input value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="예: 디자인팀 주말" /></label><button type="button" disabled={groupBusy} onClick={() => void createGroup()}>그룹 만들기</button></div>
+          <div className="group-form"><label>초대 코드<input value={inviteCode} onChange={(event) => setInviteCode(event.target.value.toUpperCase())} placeholder="예: NUNCHI" /></label><button type="button" disabled={groupBusy} onClick={() => void joinGroup()}>그룹 참여</button></div>
+          {groupMessage && <p className="form-message" role="status">{groupMessage}</p>}
+        </div>
+        <div className="group-list">{groups.length === 0 ? <div className="empty-state">참여한 그룹이 없습니다. 그룹을 만들거나 초대 코드로 참여해 주세요.</div> : groups.map((group) => <article key={group.id}><div><strong>{group.name}</strong><span>익명 구성원 {group.memberCount}명</span></div><div><span>초대 코드</span><code>{group.inviteCode}</code></div></article>)}</div>
       </section>
       <section className="composer" aria-labelledby="composer-title">
         <div><p className="eyebrow">LOCAL OLLAMA</p><h2 id="composer-title">말하듯 입력해도 괜찮아요</h2><p>환경변수로 선택한 로컬 Ollama 모델이 문장을 구조화하고, 서버가 결과 형식을 다시 검증합니다.</p></div>
