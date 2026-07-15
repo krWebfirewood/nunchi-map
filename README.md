@@ -37,6 +37,16 @@ npm run dev
 
 브라우저에서 `http://localhost:3000`을 엽니다.
 
+### 같은 네트워크에서 데모 공유
+
+개발 PC와 같은 네트워크에 연결된 기기에서는 `http://10.48.17.162:3000`으로 접속할 수 있습니다. Next 개발 서버의 HMR WebSocket이 차단되지 않도록 `.env`의 `DEV_ALLOWED_ORIGINS`에 접속에 사용할 개발 PC의 IPv4 주소를 지정하고 개발 서버를 다시 시작하세요. IP가 바뀌거나 여러 주소가 필요하면 쉼표로 구분합니다.
+
+```dotenv
+DEV_ALLOWED_ORIGINS="10.48.17.162"
+```
+
+페이지 자체가 열리지 않으면 Windows 방화벽에서 현재 네트워크 프로필에 대해 Node.js 또는 TCP 3000 인바운드를 허용해야 합니다. 페이지는 열리지만 실제 카카오 지도가 나오지 않으면 Kakao Developers의 JavaScript SDK 도메인에도 `http://10.48.17.162:3000`을 추가하세요. 회사 네트워크의 단말 간 통신 차단 정책이 있는 경우에는 같은 네트워크여도 직접 접속할 수 없습니다.
+
 ### Kakao 지도 활성화
 
 Kakao Developers에서 앱을 만든 뒤 Kakao Map 사용 설정을 켜고 JavaScript 키의 SDK 도메인에 `http://localhost:3000`을 등록합니다. `.env`의 `NEXT_PUBLIC_KAKAO_MAP_KEY`에 JavaScript 키를 넣고 개발 서버를 다시 시작하세요. REST API 키가 아닌 JavaScript 키가 필요합니다.
