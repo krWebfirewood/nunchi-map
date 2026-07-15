@@ -156,7 +156,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         </aside>
       </section>
       <section className="composer" aria-labelledby="composer-title">
-        <div><p className="eyebrow">LOCAL OLLAMA</p><h2 id="composer-title">말하듯 입력해도 괜찮아요</h2><p>로컬 qwen2.5:7b가 문장을 날짜·시간·장소로 바꾸고, 서버가 결과 형식을 다시 검증합니다.</p></div>
+        <div><p className="eyebrow">LOCAL OLLAMA</p><h2 id="composer-title">말하듯 입력해도 괜찮아요</h2><p>환경변수로 선택한 로컬 Ollama 모델이 문장을 구조화하고, 서버가 결과 형식을 다시 검증합니다.</p></div>
         <div className="ai-composer">
           <div className="input-shell"><textarea aria-label="자연어 일정" value={naturalText} onChange={(event) => setNaturalText(event.target.value)} rows={3} /><button type="button" disabled={analyzing} onClick={() => void analyzeNaturalLanguage()}>{analyzing ? "분석 중…" : "AI로 분석"}</button></div>
           {assumptions.length > 0 && <div className="assumption-box"><strong>AI가 적용한 해석</strong><ul>{assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}</ul></div>}
