@@ -10,6 +10,10 @@ export interface AnonymousConflictResult {
   riskLevel: "low" | "medium" | "high";
 }
 
+export function uniquePeerUserIds(currentUserId: string, memberUserIds: string[]): string[] {
+  return [...new Set(memberUserIds)].filter((userId) => userId !== currentUserId);
+}
+
 export async function findScopedSchedules(input: ScheduleInput, client: Prisma.TransactionClient | typeof db = db): Promise<Schedule[]> {
   const memberships = await client.groupMember.findMany({ where: { userId: input.userId }, select: { groupId: true } });
   const groupIds = memberships.map(({ groupId }) => groupId);
@@ -17,8 +21,9 @@ export async function findScopedSchedules(input: ScheduleInput, client: Prisma.T
     where: { groupId: { in: groupIds } },
     select: { userId: true },
   });
-  const userIds = [...new Set([input.userId, ...peerMemberships.map(({ userId }) => userId)])];
-  return client.schedule.findMany({ where: { date: dateToDatabaseValue(input.date), userId: { in: userIds } } });
+  const peerUserIds = uniquePeerUserIds(input.userId, peerMemberships.map(({ userId }) => userId));
+  if (peerUserIds.length === 0) return [];
+  return client.schedule.findMany({ where: { date: dateToDatabaseValue(input.date), userId: { in: peerUserIds } } });
 }
 
 function overlapWindow(input: ScheduleInput, schedules: Schedule[]): AnonymousConflictResult["overlapWindow"] {
