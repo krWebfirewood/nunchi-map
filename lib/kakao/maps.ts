@@ -79,3 +79,15 @@ export function loadKakaoMaps(appKey: string): Promise<KakaoMaps> {
 
   return kakaoLoader;
 }
+
+export async function searchKakaoPlaces(appKey: string, keyword: string, size = 8): Promise<KakaoPlaceResult[]> {
+  const maps = await loadKakaoMaps(appKey);
+  const places = new maps.services.Places();
+  return new Promise((resolve, reject) => {
+    places.keywordSearch(keyword, (items, status) => {
+      if (status === maps.services.Status.OK) resolve(items);
+      else if (status === maps.services.Status.ZERO_RESULT) resolve([]);
+      else reject(new Error("카카오 장소 검색에 실패했습니다."));
+    }, { size });
+  });
+}

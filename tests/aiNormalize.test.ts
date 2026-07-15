@@ -39,4 +39,9 @@ describe("createParsedScheduleDraft", () => {
   it("필수 정보가 부족하면 초안을 만들지 않는다", () => {
     expect(createParsedScheduleDraft("이번 주 일요일에 놀고 싶어", "2026-07-15")).toBeNull();
   });
+
+  it("내일과 기본 목록 밖 장소도 빠른 초안으로 만든다", () => {
+    const result = createParsedScheduleDraft("내일 마포구청역 12시부터 14시까지 일정이 있어", "2026-07-15");
+    expect(result).toMatchObject({ date: "2026-07-16", startTime: "12:00", endTime: "14:00", locationName: "마포구청역" });
+  });
 });

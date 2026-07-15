@@ -1,4 +1,3 @@
-import { DEMO_LOCATIONS } from "@/lib/locations";
 import { addDays, format, parseISO, startOfWeek } from "date-fns";
 import { ko } from "date-fns/locale";
 
@@ -30,8 +29,9 @@ export function scheduleParserPrompt(today: string, timezone: string): string {
 - 저녁 전까지는 18:00 종료
 
 장소 규칙:
-- locationName은 다음 중 하나만 사용한다: ${DEMO_LOCATIONS.map((location) => location.name).join(", ")}
-- 입력 장소가 목록에 없으면 가장 가까운 의미의 목록 값을 고르고 assumptions에 기록한다.
+- locationName에는 사용자가 말한 실제 장소명, 역명, 상호명 또는 주소를 그대로 적는다.
+- 장소를 임의의 다른 지역으로 바꾸거나 추측하지 않는다.
+- 장소가 모호하면 원문에서 확인되는 가장 구체적인 표현을 적고 assumptions에 기록한다.
 - 반경이 명시되지 않으면 radiusMeters는 1500이다.
 - 다른 사람의 일정이나 개인정보를 추론하지 않는다.
 - 기본값이나 해석을 적용했다면 assumptions에 짧은 한국어 문장으로 기록한다.`;

@@ -1,13 +1,10 @@
 import { z } from "zod";
-import { DEMO_LOCATIONS } from "@/lib/locations";
-
-const locationNames = DEMO_LOCATIONS.map((location) => location.name) as [string, ...string[]];
 
 export const parsedScheduleSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   endTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-  locationName: z.enum(locationNames),
+  locationName: z.string().trim().min(1).max(80),
   radiusMeters: z.number().int().min(100).max(3000),
   preferences: z.object({
     maxTravelMinutes: z.number().int().positive().nullable(),
@@ -37,7 +34,7 @@ export const parsedScheduleJsonSchema = {
     date: { type: "string" },
     startTime: { type: "string" },
     endTime: { type: "string" },
-    locationName: { type: "string", enum: locationNames },
+    locationName: { type: "string", minLength: 1, maxLength: 80 },
     radiusMeters: { type: "integer", minimum: 100, maximum: 3000 },
     assumptions: { type: "array", items: { type: "string" } },
   },

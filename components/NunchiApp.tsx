@@ -5,6 +5,7 @@ import { MonthCalendar } from "@/components/calendar/MonthCalendar";
 import { LocationSearch, type SelectedLocation } from "@/components/map/LocationSearch";
 import { MapView } from "@/components/map/MapView";
 import { DEMO_LOCATIONS } from "@/lib/locations";
+import { searchKakaoPlaces } from "@/lib/kakao/maps";
 
 type User = { id: string; nickname: string };
 type Schedule = { id: string; startMinutes: number; endMinutes: number; locationName: string; latitude: number; longitude: number; radiusMeters: number };
@@ -47,6 +48,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [locationAddress, setLocationAddress] = useState("영등포 중심");
   const [latitude, setLatitude] = useState<number>(DEMO_LOCATIONS[0].latitude);
   const [longitude, setLongitude] = useState<number>(DEMO_LOCATIONS[0].longitude);
+  const [locationResolved, setLocationResolved] = useState(true);
   const [radiusMeters, setRadiusMeters] = useState(1500);
   const [conflict, setConflict] = useState<Conflict | null>(null);
   const [message, setMessage] = useState("");
@@ -130,6 +132,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     setLocationAddress(location.address);
     setLatitude(location.latitude);
     setLongitude(location.longitude);
+    setLocationResolved(true);
     resetCheckResult();
   }
 
@@ -190,8 +193,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         signal: controller.signal,
       });
       if (previewResponse.ok) {
-        applyParsedSchedule(await previewResponse.json() as ParsedSchedule);
-        setMessage("빠른 초안을 입력 폼에 반영했습니다. Ollama가 뒤에서 내용을 확인하고 있어요.");
+        const locationFound = await applyParsedSchedule(await previewResponse.json() as ParsedSchedule);
+        if (locationFound) setMessage("빠른 초안을 입력 폼에 반영했습니다. Ollama가 뒤에서 내용을 확인하고 있어요.");
       }
       setDraftingSchedule(false);
       setAnalyzing(true);
@@ -204,8 +207,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
       });
       const data = await response.json();
       if (!response.ok) { setMessage(data.message ?? "자연어 일정 분석에 실패했습니다."); return; }
-      applyParsedSchedule(data as ParsedSchedule);
-      setMessage("Ollama 분석 결과를 직접 입력 폼에 반영했습니다. 내용을 확인한 뒤 충돌을 검사하세요.");
+      const locationFound = await applyParsedSchedule(data as ParsedSchedule);
+      if (locationFound) setMessage("Ollama 분석 결과와 장소 좌표를 입력 폼에 반영했습니다. 내용을 확인한 뒤 충돌을 검사하세요.");
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setMessage("Ollama 분석 요청에 실패했습니다. 직접 입력은 계속 사용할 수 있습니다.");
@@ -218,7 +221,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     }
   }
 
-  function applyParsedSchedule(parsed: ParsedSchedule) {
+  async function applyParsedSchedule(parsed: ParsedSchedule): Promise<boolean> {
     setSelectedDate(parsed.date);
     setStartTime(parsed.startTime);
     setEndTime(parsed.endTime);
@@ -228,11 +231,38 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
       setLocationAddress(`${knownLocation.name} 중심`);
       setLatitude(knownLocation.latitude);
       setLongitude(knownLocation.longitude);
+      setLocationResolved(true);
+    } else {
+      setLocationAddress("카카오 지도에서 좌표 찾는 중…");
+      setLocationResolved(false);
+      const appKey = process.env.NEXT_PUBLIC_KAKAO_MAP_KEY?.trim() ?? "";
+      if (!appKey) {
+        setMessage("카카오 지도 키가 없어 장소 좌표를 찾지 못했습니다. 직접 장소를 검색해 선택해 주세요.");
+        return false;
+      }
+      try {
+        const [place] = await searchKakaoPlaces(appKey, parsed.locationName, 1);
+        if (!place) {
+          setLocationAddress("좌표를 찾지 못함");
+          setMessage(`‘${parsed.locationName}’의 좌표를 찾지 못했습니다. 직접 장소 검색에서 선택해 주세요.`);
+          return false;
+        }
+        setLocationName(place.place_name);
+        setLocationAddress(place.road_address_name || place.address_name);
+        setLatitude(Number(place.y));
+        setLongitude(Number(place.x));
+        setLocationResolved(true);
+      } catch {
+        setLocationAddress("좌표 검색 실패");
+        setMessage("장소 좌표 검색에 실패했습니다. 직접 장소 검색에서 선택해 주세요.");
+        return false;
+      }
     }
     setRadiusMeters(parsed.radiusMeters);
     setAssumptions(parsed.assumptions);
     setConflict(null);
     setRecommendation(null);
+    return true;
   }
 
   async function requestRecommendations() {
@@ -280,6 +310,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     setLocationAddress(`${candidate.locationName} 추천 위치`);
     setLatitude(candidate.latitude);
     setLongitude(candidate.longitude);
+    setLocationResolved(true);
     setStartTime(formatMinutes(candidate.startMinutes));
     setEndTime(formatMinutes(candidate.endMinutes));
     setConflict(null);
@@ -377,7 +408,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
             <label className="radius-field">확인 반경 <strong>{(radiusMeters / 1000).toFixed(1)}km</strong><input type="range" min="100" max="3000" step="100" value={radiusMeters} onChange={(event) => { setRadiusMeters(Number(event.target.value)); resetCheckResult(); }} /></label>
           </div>
           {message && <p className="form-message" role="status">{message}</p>}
-          <div className="form-actions"><button className="secondary-button" type="button" disabled={busy || !userId} onClick={() => void checkConflict()}>{busy ? "확인 중…" : "충돌 먼저 확인"}</button><button className="primary-button" type="button" disabled={busy || !userId} onClick={() => void saveSchedule()}>일정 등록</button></div>
+          <div className="form-actions"><button className="secondary-button" type="button" disabled={busy || !userId || !locationResolved} onClick={() => void checkConflict()}>{busy ? "확인 중…" : "충돌 먼저 확인"}</button><button className="primary-button" type="button" disabled={busy || !userId || !locationResolved} onClick={() => void saveSchedule()}>일정 등록</button></div>
         </div>
         <aside className="schedule-list">
           <div><p className="eyebrow">MY SCHEDULES</p><h2>{currentUser?.nickname ?? "사용자"}님의 일정</h2><p>{selectedDate}</p></div>

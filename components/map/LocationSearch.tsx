@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { loadKakaoMaps, type KakaoPlaceResult } from "@/lib/kakao/maps";
+import { searchKakaoPlaces, type KakaoPlaceResult } from "@/lib/kakao/maps";
 import { DEMO_LOCATIONS } from "@/lib/locations";
 
 export interface SelectedLocation {
@@ -38,21 +38,12 @@ export function LocationSearch({ selectedName, onSelect }: LocationSearchProps) 
     setSearching(true);
     setStatusMessage("");
     try {
-      const maps = await loadKakaoMaps(appKey);
-      const places = new maps.services.Places();
-      places.keywordSearch(keyword, (items, status) => {
-        setSearching(false);
-        if (status === maps.services.Status.OK) {
-          setResults(items);
-          setStatusMessage(`${items.length}개 장소를 찾았습니다.`);
-        } else if (status === maps.services.Status.ZERO_RESULT) {
-          setResults([]);
-          setStatusMessage("검색 결과가 없습니다. 지역명이나 도로명 주소를 함께 입력해 보세요.");
-        } else {
-          setResults([]);
-          setStatusMessage("장소 검색에 실패했습니다. 잠시 후 다시 시도해 주세요.");
-        }
-      }, { size: 8 });
+      const items = await searchKakaoPlaces(appKey, keyword);
+      setSearching(false);
+      setResults(items);
+      setStatusMessage(items.length > 0
+        ? `${items.length}개 장소를 찾았습니다.`
+        : "검색 결과가 없습니다. 지역명이나 도로명 주소를 함께 입력해 보세요.");
     } catch {
       setSearching(false);
       setResults([]);
