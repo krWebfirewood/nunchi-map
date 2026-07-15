@@ -13,7 +13,7 @@ type Conflict = { hasConflict: boolean; ownScheduleConflict: boolean; anonymousC
 type ParsedSchedule = { date: string; startTime: string; endTime: string; locationName: string; radiusMeters: number; assumptions: string[] };
 type RecommendationCandidate = { id: string; type: "location" | "time"; title: string; description: string; locationName: string; latitude: number; longitude: number; startMinutes: number; endMinutes: number; estimatedRisk: "low" };
 type Recommendation = { summary: string; candidates: RecommendationCandidate[]; explainedByAi: boolean };
-type Group = { id: string; name: string; inviteCode: string; memberCount: number };
+type Group = { id: string; name: string; inviteCode: string; memberCount: number; role: "owner" | "member" };
 
 function toMinutes(value: string): number {
   const [hours, minutes] = value.split(":").map(Number);
@@ -40,6 +40,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [inviteCode, setInviteCode] = useState("");
   const [groupMessage, setGroupMessage] = useState("");
   const [groupBusy, setGroupBusy] = useState(false);
+  const [groupActionId, setGroupActionId] = useState<string | null>(null);
+  const [copiedGroupId, setCopiedGroupId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [groupSchedules, setGroupSchedules] = useState<MapSchedule[]>([]);
@@ -421,6 +423,50 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     setInviteCode(""); setGroupMessage(`‘${data.group.name}’ 그룹에 참여했습니다.`); await loadGroups(); setCalendarRefreshKey((value) => value + 1);
   }
 
+  async function copyInviteCode(group: Group) {
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(group.inviteCode);
+      copied = true;
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = group.inviteCode;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.append(textarea);
+      textarea.select();
+      copied = document.execCommand("copy");
+      textarea.remove();
+    }
+    if (!copied) { setGroupMessage(`초대 코드를 복사하지 못했습니다. ${group.inviteCode}를 직접 복사해 주세요.`); return; }
+    setCopiedGroupId(group.id);
+    setGroupMessage(`‘${group.name}’ 초대 코드를 복사했습니다.`);
+    window.setTimeout(() => setCopiedGroupId((current) => current === group.id ? null : current), 1800);
+  }
+
+  async function runGroupAction(group: Group) {
+    const isOwner = group.role === "owner";
+    const confirmed = window.confirm(isOwner
+      ? `‘${group.name}’ 그룹을 삭제할까요?\n그룹만 삭제되며 구성원 각자의 일정은 유지됩니다.`
+      : `‘${group.name}’ 그룹에서 탈퇴할까요?\n이 그룹의 공유 일정은 더 이상 지도와 충돌 계산에 나타나지 않습니다.`);
+    if (!confirmed) return;
+    setGroupActionId(group.id);
+    setGroupMessage("");
+    try {
+      const endpoint = isOwner ? `/api/groups/${group.id}` : `/api/groups/${group.id}/leave`;
+      const response = await fetch(endpoint, { method: "DELETE" });
+      const data = await response.json().catch(() => null) as { message?: string } | null;
+      if (!response.ok) { setGroupMessage(data?.message ?? "그룹 변경에 실패했습니다."); return; }
+      resetCheckResult();
+      setGroupMessage(data?.message ?? (isOwner ? "그룹을 삭제했습니다." : "그룹에서 탈퇴했습니다."));
+      await Promise.all([loadGroups(), loadSchedules()]);
+    } catch {
+      setGroupMessage("그룹 변경 요청에 실패했습니다.");
+    } finally {
+      setGroupActionId(null);
+    }
+  }
+
   if (!sessionReady) return <main className="session-screen"><div className="session-card"><p className="eyebrow">PRIVATE SESSION</p><h1>눈치맵을 준비하고 있어요</h1></div></main>;
 
   if (!userId) return <main className="session-screen"><section className="session-card"><span className="brand-mark" aria-hidden="true">눈</span><p className="eyebrow">PRIVATE ACCOUNT</p><h1>내 일정으로<br />시작해 볼까요?</h1><div className="auth-tabs"><button type="button" className={authMode === "login" ? "active" : ""} onClick={() => { setAuthMode("login"); setAuthMessage(""); }}>로그인</button><button type="button" className={authMode === "signup" ? "active" : ""} onClick={() => { setAuthMode("signup"); setAuthMessage(""); }}>회원가입</button></div><form className="auth-form" onSubmit={(event) => void submitCredentials(event)}>{authMode === "signup" && <label>닉네임<input value={authNickname} onChange={(event) => setAuthNickname(event.target.value)} minLength={2} maxLength={20} autoComplete="nickname" required /></label>}<label>아이디<input value={authLoginId} onChange={(event) => setAuthLoginId(event.target.value.toLowerCase())} minLength={4} maxLength={24} pattern="[a-z0-9_]+" autoComplete="username" required /></label><label>비밀번호<input type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} minLength={authMode === "signup" ? 8 : 1} maxLength={72} autoComplete={authMode === "signup" ? "new-password" : "current-password"} required /></label><button type="submit" disabled={authBusy}>{authBusy ? "처리 중…" : authMode === "signup" ? "가입하고 시작" : "로그인"}</button></form>{authMessage && <p className="form-message" role="status">{authMessage}</p>}<div className="auth-divider"><span>또는 개발용 데모 계정</span></div><div className="session-users">{users.map((user) => <button key={user.id} type="button" onClick={() => void login(user.id)}><strong>{user.nickname}</strong><span>바로 체험</span></button>)}</div>{message && <p className="form-message" role="status">{message}</p>}</section></main>;
@@ -486,7 +532,11 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
           <div className="group-form"><label>초대 코드<input value={inviteCode} onChange={(event) => setInviteCode(event.target.value.toUpperCase())} placeholder="예: NUNCHI" /></label><button type="button" disabled={groupBusy} onClick={() => void joinGroup()}>그룹 참여</button></div>
           {groupMessage && <p className="form-message" role="status">{groupMessage}</p>}
         </div>
-        <div className="group-list">{groups.length === 0 ? <div className="empty-state">참여한 그룹이 없습니다. 그룹을 만들거나 초대 코드로 참여해 주세요.</div> : groups.map((group) => <article key={group.id}><div><strong>{group.name}</strong><span>익명 구성원 {group.memberCount}명</span></div><div><span>초대 코드</span><code>{group.inviteCode}</code></div></article>)}</div>
+        <div className="group-list">{groups.length === 0 ? <div className="empty-state">참여한 그룹이 없습니다. 그룹을 만들거나 초대 코드로 참여해 주세요.</div> : groups.map((group) => <article key={group.id} className={group.role === "owner" ? "is-owner" : ""}>
+          <div className="group-card-heading"><div><strong>{group.name}</strong><span>익명 구성원 {group.memberCount}명</span></div><em>{group.role === "owner" ? "내가 만든 그룹" : "참여한 그룹"}</em></div>
+          <div className="group-invite"><span>초대 코드</span><div><code>{group.inviteCode}</code><button type="button" disabled={groupActionId !== null} onClick={() => void copyInviteCode(group)} aria-label={`${group.name} 초대 코드 복사`}>{copiedGroupId === group.id ? "복사됨" : "복사"}</button></div></div>
+          <div className="group-card-actions"><small>{group.role === "owner" ? "생성자만 이 그룹을 삭제할 수 있습니다." : "탈퇴하면 이 그룹의 공유 일정이 보이지 않습니다."}</small><button type="button" className={group.role === "owner" ? "delete-group" : "leave-group"} disabled={groupActionId !== null || groupBusy} onClick={() => void runGroupAction(group)}>{groupActionId === group.id ? "처리 중…" : group.role === "owner" ? "그룹 삭제" : "그룹 탈퇴"}</button></div>
+        </article>)}</div>
       </section>
       <section className="composer" aria-labelledby="composer-title">
         <div><p className="eyebrow">LOCAL OLLAMA</p><h2 id="composer-title">말하듯 입력해도 괜찮아요</h2><p>환경변수로 선택한 로컬 Ollama 모델이 문장을 구조화하고, 서버가 결과 형식을 다시 검증합니다.</p></div>

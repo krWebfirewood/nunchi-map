@@ -15,6 +15,7 @@ model User {
   createdAt DateTime @default(now())
   schedules Schedule[]
   memberships GroupMember[]
+  ownedGroups Group[] @relation("GroupOwner")
   sessions Session[]
 }
 
@@ -22,8 +23,11 @@ model Group {
   id String @id @default(cuid())
   name String
   inviteCode String @unique
+  ownerId String?
   createdAt DateTime @default(now())
+  owner User? @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   members GroupMember[]
+  @@index([ownerId])
 }
 
 model GroupMember {

@@ -13,6 +13,7 @@ async function main() {
       id: "demo-company",
       name: "눈치 좋은 동료들",
       inviteCode: "NUNCHI",
+      ownerId: "demo-kim",
       members: { create: [{ userId: "demo-kim" }, { userId: "demo-weekend" }, { userId: "demo-anonymous" }] },
     },
   });
