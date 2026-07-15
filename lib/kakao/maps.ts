@@ -2,7 +2,12 @@ export type KakaoLatLng = object;
 
 export interface KakaoMap {
   setCenter(position: KakaoLatLng): void;
+  setBounds(bounds: KakaoLatLngBounds, paddingTop?: number, paddingRight?: number, paddingBottom?: number, paddingLeft?: number): void;
   relayout(): void;
+}
+
+export interface KakaoLatLngBounds {
+  extend(position: KakaoLatLng): void;
 }
 
 export interface KakaoOverlay {
@@ -29,6 +34,7 @@ interface KakaoPlacesService {
 export interface KakaoMaps {
   load(callback: () => void): void;
   LatLng: new (latitude: number, longitude: number) => KakaoLatLng;
+  LatLngBounds: new () => KakaoLatLngBounds;
   Map: new (container: HTMLElement, options: { center: KakaoLatLng; level: number }) => KakaoMap;
   Marker: new (options: { map: KakaoMap; position: KakaoLatLng }) => KakaoOverlay;
   Circle: new (options: {
@@ -40,6 +46,14 @@ export interface KakaoMaps {
     strokeOpacity: number;
     fillColor: string;
     fillOpacity: number;
+    strokeStyle?: string;
+  }) => KakaoOverlay;
+  CustomOverlay: new (options: {
+    map: KakaoMap;
+    position: KakaoLatLng;
+    content: HTMLElement | string;
+    yAnchor?: number;
+    zIndex?: number;
   }) => KakaoOverlay;
   services: {
     Places: new () => KakaoPlacesService;

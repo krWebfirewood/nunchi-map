@@ -385,7 +385,17 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
       <section className="workspace" aria-label="일정 확인 작업 영역">
         <MonthCalendar selectedDate={selectedDate} scheduleCount={schedules.length} onSelectDate={(date) => { setSelectedDate(date); resetCheckResult(); }} />
         <div className="map-stack">
-          <MapView locationName={locationName} latitude={latitude} longitude={longitude} radiusMeters={radiusMeters} conflictState={conflictState} />
+          <MapView
+            locationName={locationName}
+            latitude={latitude}
+            longitude={longitude}
+            radiusMeters={radiusMeters}
+            conflictState={conflictState}
+            schedules={schedules}
+            inputStartMinutes={toMinutes(startTime)}
+            inputEndMinutes={toMinutes(endTime)}
+            selectedDate={selectedDate}
+          />
           <div className={`result-panel ${conflict?.hasConflict ? "has-conflict" : ""}`}>
             <p className="eyebrow">SCHEDULE CHECK</p>
             <h2>{conflict ? (conflict.ownScheduleConflict ? "내 일정과 시간이 겹쳐요" : conflict.hasConflict ? "익명 일정과 겹칠 가능성이 있어요" : "현재 조건은 안전해요") : "일정을 입력하고 확인해 보세요"}</h2>
