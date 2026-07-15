@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { loadKakaoMaps, type KakaoMap, type KakaoOverlay } from "@/lib/kakao/maps";
+import { isScheduleActiveAtTime, summarizeSchedulesAtTime } from "@/lib/map/timeExplorer";
 
 export interface MapSchedule {
   id: string;
@@ -22,8 +23,6 @@ interface MapViewProps {
   radiusMeters: number;
   conflictState: "unchecked" | "safe" | "conflict";
   schedules: MapSchedule[];
-  inputStartMinutes: number;
-  inputEndMinutes: number;
   selectedDate: string;
 }
 
@@ -31,12 +30,12 @@ function formatMinutes(value: number): string {
   return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 }
 
-function overlapsInput(schedule: MapSchedule, startMinutes: number, endMinutes: number): boolean {
-  return startMinutes < schedule.endMinutes && schedule.startMinutes < endMinutes;
-}
-
 function groupKey(schedule: MapSchedule): string {
   return `${schedule.source}:${schedule.latitude.toFixed(5)},${schedule.longitude.toFixed(5)}`;
+}
+
+function isExplorerScheduleActive(schedule: MapSchedule, mode: "all" | "time", minutes: number): boolean {
+  return mode === "all" || isScheduleActiveAtTime(schedule, minutes);
 }
 
 export function MapView({
@@ -46,8 +45,6 @@ export function MapView({
   radiusMeters,
   conflictState,
   schedules,
-  inputStartMinutes,
-  inputEndMinutes,
   selectedDate,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -55,9 +52,13 @@ export function MapView({
   const overlaysRef = useRef<KakaoOverlay[]>([]);
   const [loadError, setLoadError] = useState(false);
   const [viewPreference, setViewPreference] = useState<{ date: string; mode: "day" | "input" }>({ date: selectedDate, mode: "day" });
+  const [timePreference, setTimePreference] = useState<{ date: string; mode: "all" | "time"; minutes: number }>({ date: selectedDate, mode: "all", minutes: 720 });
   const appKey = process.env.NEXT_PUBLIC_KAKAO_MAP_KEY?.trim() ?? "";
   const viewMode = schedules.length === 0 ? "input" : viewPreference.date === selectedDate ? viewPreference.mode : "day";
-  const activeScheduleCount = schedules.filter((schedule) => overlapsInput(schedule, inputStartMinutes, inputEndMinutes)).length;
+  const timeMode = timePreference.date === selectedDate ? timePreference.mode : "all";
+  const explorerMinutes = timePreference.date === selectedDate ? timePreference.minutes : 720;
+  const timeSummary = summarizeSchedulesAtTime(schedules, explorerMinutes);
+  const activeScheduleCount = timeMode === "all" ? schedules.length : timeSummary.activeCount;
   const groupedSchedules = useMemo(() => {
     const groups = new Map<string, MapSchedule[]>();
     for (const schedule of schedules) {
@@ -81,10 +82,10 @@ export function MapView({
 
       if (viewMode === "day" && schedules.length > 0) {
         const bounds = new maps.LatLngBounds();
-        const sortedSchedules = [...schedules].sort((a, b) => Number(overlapsInput(a, inputStartMinutes, inputEndMinutes)) - Number(overlapsInput(b, inputStartMinutes, inputEndMinutes)));
+        const sortedSchedules = [...schedules].sort((a, b) => Number(isExplorerScheduleActive(a, timeMode, explorerMinutes)) - Number(isExplorerScheduleActive(b, timeMode, explorerMinutes)));
         for (const schedule of sortedSchedules) {
           const center = new maps.LatLng(schedule.latitude, schedule.longitude);
-          const active = overlapsInput(schedule, inputStartMinutes, inputEndMinutes);
+          const active = isExplorerScheduleActive(schedule, timeMode, explorerMinutes);
           const isGroupSchedule = schedule.source === "group";
           overlaysRef.current.push(new maps.Circle({
             map,
@@ -105,7 +106,7 @@ export function MapView({
 
         for (const group of groupedSchedules) {
           const representative = group[0];
-          const groupActive = group.some((schedule) => overlapsInput(schedule, inputStartMinutes, inputEndMinutes));
+          const groupActive = group.some((schedule) => isExplorerScheduleActive(schedule, timeMode, explorerMinutes));
           const label = document.createElement("div");
           label.className = `day-zone-label ${representative.source} ${groupActive ? "active" : "inactive"}`;
           const place = document.createElement("strong");
@@ -141,7 +142,7 @@ export function MapView({
       setLoadError(false);
     }).catch(() => setLoadError(true));
     return () => { cancelled = true; };
-  }, [appKey, conflictState, groupedSchedules, inputEndMinutes, inputStartMinutes, latitude, longitude, radiusMeters, schedules, viewMode]);
+  }, [appKey, conflictState, explorerMinutes, groupedSchedules, latitude, longitude, radiusMeters, schedules, timeMode, viewMode]);
 
   const mapControls = schedules.length > 0 && (
     <div className="map-view-controls" role="group" aria-label="지도 표시 방식">
@@ -150,31 +151,58 @@ export function MapView({
     </div>
   );
 
+  const timeStatusLabel = timeSummary.riskLevel === "high"
+    ? "충돌 가능성 높음"
+    : timeSummary.riskLevel === "medium"
+      ? "충돌 주의"
+      : timeSummary.activeCount === 0
+        ? "활성 일정 없음"
+        : "내 일정과 그룹 일정 겹침 없음";
+  const timeExplorer = schedules.length > 0 && viewMode === "day" && (
+    <section className="map-time-explorer" aria-label="지도 시간대 탐색">
+      <div className="time-explorer-heading">
+        <div><span>시간대 탐색</span><strong>{timeMode === "all" ? "하루 전체" : formatMinutes(explorerMinutes)}</strong></div>
+        <div className="time-mode-buttons" role="group" aria-label="시간 표시 범위">
+          <button type="button" className={timeMode === "all" ? "active" : ""} onClick={() => setTimePreference({ date: selectedDate, mode: "all", minutes: explorerMinutes })}>하루 전체</button>
+          <button type="button" className={timeMode === "time" ? "active" : ""} onClick={() => setTimePreference({ date: selectedDate, mode: "time", minutes: explorerMinutes })}>시간 선택</button>
+        </div>
+      </div>
+      <input type="range" min="0" max="1440" step="30" value={explorerMinutes} onChange={(event) => setTimePreference({ date: selectedDate, mode: "time", minutes: Number(event.target.value) })} aria-label="지도에서 확인할 시간" aria-valuetext={formatMinutes(explorerMinutes)} />
+      <div className="time-scale" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+      <div className={`time-risk-summary ${timeMode === "all" ? "all" : timeSummary.riskLevel}`} role="status" aria-live="polite">
+        <strong>{timeMode === "all" ? `하루 일정 ${schedules.length}개` : timeStatusLabel}</strong>
+        <span>{timeMode === "all" ? "모든 시간대의 영역을 진하게 표시합니다." : `활성 ${timeSummary.activeCount}개 · 내 일정 ${timeSummary.ownCount}개 · 그룹 일정 ${timeSummary.groupCount}개`}</span>
+      </div>
+    </section>
+  );
+
   if (!appKey || loadError) {
     const circleSize = Math.max(120, Math.min(270, 110 + radiusMeters / 12));
-    return (
+    return <div className="map-panel">
       <div className={`mock-map ${conflictState}`} aria-label={`${locationName} 지도 목업`}>
-        <div className="mock-map-grid" aria-hidden="true" />
-        <div className="mock-circle" style={{ width: circleSize, height: circleSize }} aria-hidden="true" />
-        <div className="mock-marker" aria-hidden="true"><span /></div>
-        <div className="map-place-label"><strong>{locationName}</strong><span>{latitude.toFixed(4)}, {longitude.toFixed(4)}</span></div>
-        {mapControls}
-        <div className="map-mode-badge">{loadError ? "Kakao 지도 연결 실패 · 목업 모드" : "지도 목업 모드"}</div>
-        <div className="map-radius-label">확인 반경 {(radiusMeters / 1000).toFixed(1)}km</div>
-      </div>
-    );
+          <div className="mock-map-grid" aria-hidden="true" />
+          <div className="mock-circle" style={{ width: circleSize, height: circleSize }} aria-hidden="true" />
+          <div className="mock-marker" aria-hidden="true"><span /></div>
+          <div className="map-place-label"><strong>{locationName}</strong><span>{latitude.toFixed(4)}, {longitude.toFixed(4)}</span></div>
+          {mapControls}
+          <div className="map-mode-badge">{loadError ? "Kakao 지도 연결 실패 · 목업 모드" : "지도 목업 모드"}</div>
+          <div className="map-radius-label">확인 반경 {(radiusMeters / 1000).toFixed(1)}km</div>
+        </div>
+        {timeExplorer}
+      </div>;
   }
 
-  return (
-    <div className="kakao-map-shell">
-      <div ref={containerRef} className="kakao-map" aria-label={viewMode === "day" ? `선택한 날짜의 내 일정 ${schedules.length}개 지도` : `${locationName} Kakao 지도`} />
-      {mapControls}
-      <div className="map-mode-badge">Kakao 지도 · 비공개 그룹 공유</div>
-      {viewMode === "day" ? (
-        <div className="map-zone-legend"><span><i className="own" />내 일정 {schedules.filter((schedule) => schedule.source === "own").length}</span><span><i className="group" />그룹 일정 {schedules.filter((schedule) => schedule.source === "group").length}</span><small>진한 원: 입력 시간과 겹침 {activeScheduleCount}</small></div>
-      ) : (
-        <div className="map-radius-label">확인 반경 {(radiusMeters / 1000).toFixed(1)}km</div>
-      )}
-    </div>
-  );
+  return <div className="map-panel">
+      <div className="kakao-map-shell">
+        <div ref={containerRef} className="kakao-map" aria-label={viewMode === "day" ? `선택한 날짜의 일정 ${schedules.length}개 지도` : `${locationName} Kakao 지도`} />
+        {mapControls}
+        <div className="map-mode-badge">Kakao 지도 · 비공개 그룹 공유</div>
+        {viewMode === "day" ? (
+          <div className="map-zone-legend"><span><i className="own" />내 일정 {schedules.filter((schedule) => schedule.source === "own").length}</span><span><i className="group" />그룹 일정 {schedules.filter((schedule) => schedule.source === "group").length}</span><small>{timeMode === "all" ? "진한 원: 하루 전체" : `${formatMinutes(explorerMinutes)} 활성 영역 ${activeScheduleCount}개`}</small></div>
+        ) : (
+          <div className="map-radius-label">확인 반경 {(radiusMeters / 1000).toFixed(1)}km</div>
+        )}
+      </div>
+      {timeExplorer}
+    </div>;
 }

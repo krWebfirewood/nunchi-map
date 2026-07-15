@@ -446,8 +446,6 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
             radiusMeters={radiusMeters}
             conflictState={conflictState}
             schedules={mapSchedules}
-            inputStartMinutes={toMinutes(startTime)}
-            inputEndMinutes={toMinutes(endTime)}
             selectedDate={selectedDate}
           />
           <div className={`result-panel ${conflict?.hasConflict ? "has-conflict" : ""}`}>
