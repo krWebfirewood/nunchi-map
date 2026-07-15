@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { loadKakaoMaps, type KakaoMap, type KakaoOverlay } from "@/lib/kakao/maps";
 import { isScheduleActiveAtTime, summarizeSchedulesAtTime } from "@/lib/map/timeExplorer";
 
@@ -158,17 +158,21 @@ export function MapView({
       : timeSummary.activeCount === 0
         ? "활성 일정 없음"
         : "내 일정과 그룹 일정 겹침 없음";
-  const timeExplorer = schedules.length > 0 && viewMode === "day" && (
+  const showTimeExplorer = schedules.length > 0 && viewMode === "day";
+  const sliderStyle = { "--time-progress": `${(explorerMinutes / 1440) * 100}%` } as CSSProperties;
+  const timeExplorer = showTimeExplorer && (
     <section className="map-time-explorer" aria-label="지도 시간대 탐색">
       <div className="time-explorer-heading">
-        <div><span>시간대 탐색</span><strong>{timeMode === "all" ? "하루 전체" : formatMinutes(explorerMinutes)}</strong></div>
+        <div className="time-explorer-title"><span>MAP TIME</span><strong>{timeMode === "all" ? "하루 전체" : formatMinutes(explorerMinutes)}</strong><small>{timeMode === "all" ? "슬라이더를 움직여 시간 선택" : "30분 단위 탐색"}</small></div>
         <div className="time-mode-buttons" role="group" aria-label="시간 표시 범위">
-          <button type="button" className={timeMode === "all" ? "active" : ""} onClick={() => setTimePreference({ date: selectedDate, mode: "all", minutes: explorerMinutes })}>하루 전체</button>
-          <button type="button" className={timeMode === "time" ? "active" : ""} onClick={() => setTimePreference({ date: selectedDate, mode: "time", minutes: explorerMinutes })}>시간 선택</button>
+          <button type="button" className={timeMode === "all" ? "active" : ""} aria-pressed={timeMode === "all"} onClick={() => setTimePreference({ date: selectedDate, mode: "all", minutes: explorerMinutes })}>하루 전체</button>
+          <button type="button" className={timeMode === "time" ? "active" : ""} aria-pressed={timeMode === "time"} onClick={() => setTimePreference({ date: selectedDate, mode: "time", minutes: explorerMinutes })}>시간 선택</button>
         </div>
       </div>
-      <input type="range" min="0" max="1440" step="30" value={explorerMinutes} onChange={(event) => setTimePreference({ date: selectedDate, mode: "time", minutes: Number(event.target.value) })} aria-label="지도에서 확인할 시간" aria-valuetext={formatMinutes(explorerMinutes)} />
-      <div className="time-scale" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+      <div className="time-slider-shell">
+        <input type="range" min="0" max="1440" step="30" value={explorerMinutes} style={sliderStyle} onChange={(event) => setTimePreference({ date: selectedDate, mode: "time", minutes: Number(event.target.value) })} aria-label="지도에서 확인할 시간" aria-valuetext={formatMinutes(explorerMinutes)} />
+        <div className="time-scale" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+      </div>
       <div className={`time-risk-summary ${timeMode === "all" ? "all" : timeSummary.riskLevel}`} role="status" aria-live="polite">
         <strong>{timeMode === "all" ? `하루 일정 ${schedules.length}개` : timeStatusLabel}</strong>
         <span>{timeMode === "all" ? "모든 시간대의 영역을 진하게 표시합니다." : `활성 ${timeSummary.activeCount}개 · 내 일정 ${timeSummary.ownCount}개 · 그룹 일정 ${timeSummary.groupCount}개`}</span>
@@ -178,7 +182,7 @@ export function MapView({
 
   if (!appKey || loadError) {
     const circleSize = Math.max(120, Math.min(270, 110 + radiusMeters / 12));
-    return <div className="map-panel">
+    return <div className={`map-panel ${showTimeExplorer ? "has-time-explorer" : ""}`}>
       <div className={`mock-map ${conflictState}`} aria-label={`${locationName} 지도 목업`}>
           <div className="mock-map-grid" aria-hidden="true" />
           <div className="mock-circle" style={{ width: circleSize, height: circleSize }} aria-hidden="true" />
@@ -192,7 +196,7 @@ export function MapView({
       </div>;
   }
 
-  return <div className="map-panel">
+  return <div className={`map-panel ${showTimeExplorer ? "has-time-explorer" : ""}`}>
       <div className="kakao-map-shell">
         <div ref={containerRef} className="kakao-map" aria-label={viewMode === "day" ? `선택한 날짜의 일정 ${schedules.length}개 지도` : `${locationName} Kakao 지도`} />
         {mapControls}
