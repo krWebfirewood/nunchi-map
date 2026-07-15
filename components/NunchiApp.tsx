@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MonthCalendar } from "@/components/calendar/MonthCalendar";
 import { MapView } from "@/components/map/MapView";
 import { DEMO_LOCATIONS } from "@/lib/locations";
@@ -45,6 +45,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [assumptions, setAssumptions] = useState<string[]>([]);
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [recommending, setRecommending] = useState(false);
+  const [explainingRecommendation, setExplainingRecommendation] = useState(false);
+  const recommendationRequestRef = useRef<AbortController | null>(null);
   const location = useMemo(() => DEMO_LOCATIONS.find((item) => item.name === locationName) ?? DEMO_LOCATIONS[0], [locationName]);
   const currentUser = users.find((user) => user.id === userId);
   const conflictState = conflict ? (conflict.hasConflict ? "conflict" : "safe") : "unchecked";
@@ -94,8 +96,11 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   }, [selectedDate, userId]);
 
   function resetCheckResult() {
+    recommendationRequestRef.current?.abort();
     setConflict(null);
     setRecommendation(null);
+    setRecommending(false);
+    setExplainingRecommendation(false);
     setMessage("");
   }
 
@@ -161,24 +166,46 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   }
 
   async function requestRecommendations() {
-    setRecommending(true); setMessage(""); setRecommendation(null);
+    recommendationRequestRef.current?.abort();
+    const controller = new AbortController();
+    recommendationRequestRef.current = controller;
+    const body = JSON.stringify(requestBody());
+    setRecommending(true); setExplainingRecommendation(false); setMessage(""); setRecommendation(null);
     try {
       const response = await fetch("/api/ai/recommend", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody()),
+        body,
+        signal: controller.signal,
       });
       const data = await response.json();
       if (!response.ok) { setMessage(data.message ?? "대안 추천에 실패했습니다."); return; }
       setRecommendation(data as Recommendation);
-    } catch {
+      setRecommending(false);
+      if (data.candidates.length === 0) return;
+
+      setExplainingRecommendation(true);
+      const explanationResponse = await fetch("/api/ai/recommend/explain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        signal: controller.signal,
+      });
+      if (explanationResponse.ok) setRecommendation(await explanationResponse.json() as Recommendation);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
       setMessage("대안 추천 요청에 실패했습니다.");
     } finally {
-      setRecommending(false);
+      if (recommendationRequestRef.current === controller) {
+        setRecommending(false);
+        setExplainingRecommendation(false);
+        recommendationRequestRef.current = null;
+      }
     }
   }
 
   function applyCandidate(candidate: RecommendationCandidate) {
+    recommendationRequestRef.current?.abort();
     setLocationName(candidate.locationName);
     setStartTime(formatMinutes(candidate.startMinutes));
     setEndTime(formatMinutes(candidate.endMinutes));
@@ -241,8 +268,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
             <p className="eyebrow">SCHEDULE CHECK</p>
             <h2>{conflict ? (conflict.ownScheduleConflict ? "내 일정과 시간이 겹쳐요" : conflict.hasConflict ? "익명 일정과 겹칠 가능성이 있어요" : "현재 조건은 안전해요") : "일정을 입력하고 확인해 보세요"}</h2>
             {conflict?.ownScheduleConflict ? <><div className="risk-badge">내 일정 시간 충돌</div><p>같은 날짜에 이미 등록한 내 일정과 시간이 겹칩니다. 한 사람이 동시에 두 장소에 있을 수 없어 장소와 관계없이 등록할 수 없습니다.</p>{conflict.anonymousConflictCount > 0 && <p>같은 시간·지역에서 익명 일정 {conflict.anonymousConflictCount}개와도 겹칠 가능성이 있습니다.</p>}{conflict.overlapWindow && <div className="overlap-time"><span>내 일정과 겹치는 시간</span><strong>{formatMinutes(conflict.overlapWindow.startMinutes)}–{formatMinutes(conflict.overlapWindow.endMinutes)}</strong></div>}<small>시간을 변경하면 다시 안전 여부를 확인할 수 있습니다.</small></> : conflict?.hasConflict ? <><div className="risk-badge">위험도 {conflict.riskLevel === "high" ? "높음" : "보통"}</div><p>이 시간대와 지역에서 익명 일정 {conflict.anonymousConflictCount}개와 겹칠 가능성이 있습니다.</p>{conflict.overlapWindow && <div className="overlap-time"><span>충돌 가능 시간</span><strong>{formatMinutes(conflict.overlapWindow.startMinutes)}–{formatMinutes(conflict.overlapWindow.endMinutes)}</strong></div>}<small>지도 원은 요청한 확인 범위를 표시하며, 타인의 정확한 위치는 포함하지 않습니다.</small></> : conflict ? <><div className="safe-mark">✓</div><p>내 일정 및 익명 일정과 충돌하지 않습니다. 현재 조건으로 등록할 수 있습니다.</p></> : <p>내 일정은 시간 중복을, 익명 일정은 날짜·시간·거리 조건을 계산합니다. AI가 임의로 충돌을 판단하지 않습니다.</p>}
-            {conflict?.hasConflict && <button className="recommend-button" type="button" disabled={recommending} onClick={() => void requestRecommendations()}>{recommending ? "안전 후보 계산·설명 중…" : "안전한 대안 추천 받기"}</button>}
-            {recommendation && <div className="recommendation-box"><div className="recommendation-heading"><strong>{recommendation.summary}</strong><span>{recommendation.explainedByAi ? "Ollama 설명" : "서버 계산 결과"}</span></div>{recommendation.candidates.length === 0 ? <p>날짜나 확인 반경을 바꾼 뒤 다시 시도해 주세요.</p> : <ul>{recommendation.candidates.map((candidate) => <li key={candidate.id}><div><strong>{candidate.title}</strong><p>{candidate.description}</p></div><button type="button" onClick={() => applyCandidate(candidate)}>적용</button></li>)}</ul>}</div>}
+            {conflict?.hasConflict && <button className="recommend-button" type="button" disabled={recommending || explainingRecommendation} onClick={() => void requestRecommendations()}>{recommending ? "안전 후보 계산 중…" : explainingRecommendation ? "후보 표시됨 · AI 설명 중…" : "안전한 대안 추천 받기"}</button>}
+            {recommendation && <div className="recommendation-box"><div className="recommendation-heading"><strong>{recommendation.summary}</strong><span className={explainingRecommendation ? "is-loading" : ""}>{explainingRecommendation ? "Ollama 설명 준비 중…" : recommendation.explainedByAi ? "Ollama 설명" : "서버 계산 결과"}</span></div>{recommendation.candidates.length === 0 ? <p>날짜나 확인 반경을 바꾼 뒤 다시 시도해 주세요.</p> : <ul>{recommendation.candidates.map((candidate) => <li key={candidate.id}><div><strong>{candidate.title}</strong><p>{candidate.description}</p></div><button type="button" onClick={() => applyCandidate(candidate)}>적용</button></li>)}</ul>}</div>}
           </div>
         </div>
       </section>

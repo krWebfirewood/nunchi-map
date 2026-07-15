@@ -80,6 +80,8 @@ button { cursor:pointer; }
 .recommendation-heading { display:flex; justify-content:space-between; align-items:start; gap:12px; }
 .recommendation-heading>strong { line-height:1.5; }
 .recommendation-heading>span { flex:0 0 auto; padding:5px 8px; border-radius:999px; color:var(--green); background:rgba(255,255,255,.55); font-size:10px; font-weight:800; }
+.recommendation-heading>span.is-loading { animation:status-pulse 1.2s ease-in-out infinite; }
+@keyframes status-pulse { 50% { opacity:.45; } }
 .recommendation-box ul { margin:12px 0 0; padding:0; display:grid; gap:8px; list-style:none; }
 .recommendation-box li { padding:12px; display:flex; justify-content:space-between; align-items:center; gap:12px; background:rgba(255,255,255,.55); }
 .recommendation-box li p { margin:4px 0 0; font-size:12px; line-height:1.5; }
