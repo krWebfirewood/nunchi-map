@@ -57,6 +57,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [busy, setBusy] = useState(false);
   const [deletingScheduleId, setDeletingScheduleId] = useState<string | null>(null);
   const [sharingScheduleId, setSharingScheduleId] = useState<string | null>(null);
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
+  const formCardRef = useRef<HTMLDivElement>(null);
   const [naturalText, setNaturalText] = useState("이번 주 일요일 오후 2시부터 6시까지 영등포에서 영화 보고 싶어");
   const [draftingSchedule, setDraftingSchedule] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -153,14 +155,35 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
 
   async function saveSchedule() {
     setBusy(true); setMessage("");
-    const response = await fetch("/api/schedules", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(requestBody()) });
+    const response = await fetch(editingScheduleId ? `/api/schedules/${editingScheduleId}` : "/api/schedules", { method: editingScheduleId ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(requestBody()) });
     const data = await response.json();
     setBusy(false);
     if (response.status === 409) { setConflict(data.conflict); setMessage(data.message); return; }
     if (!response.ok) { setMessage(data.message ?? "일정 저장에 실패했습니다."); return; }
     setConflict(data.conflict);
     setMessage(data.message);
+    setEditingScheduleId(null);
     await loadSchedules();
+  }
+
+  function beginEdit(schedule: Schedule) {
+    setEditingScheduleId(schedule.id);
+    setStartTime(formatMinutes(schedule.startMinutes));
+    setEndTime(formatMinutes(schedule.endMinutes));
+    setLocationName(schedule.locationName);
+    setLocationAddress("등록된 일정 위치");
+    setLatitude(schedule.latitude);
+    setLongitude(schedule.longitude);
+    setRadiusMeters(schedule.radiusMeters);
+    setShareWithGroups(schedule.shareWithGroups);
+    resetCheckResult();
+    requestAnimationFrame(() => formCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
+
+  function cancelEdit() {
+    setEditingScheduleId(null);
+    resetCheckResult();
+    setMessage("일정 수정을 취소했습니다.");
   }
 
   async function deleteSchedule(id: string) {
@@ -175,6 +198,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         return;
       }
       setMessage("내 일정을 삭제했습니다.");
+      if (editingScheduleId === id) setEditingScheduleId(null);
       await loadSchedules();
     } catch {
       setMessage("일정 삭제 요청에 실패했습니다.");
@@ -411,7 +435,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         <aside className="privacy-note"><span className="privacy-icon" aria-hidden="true">✓</span><div><strong>비공개 그룹 공유</strong><p>같은 그룹에는 일정 위치를 표시하지만 사용자 이름은 공개하지 않아요.</p></div></aside>
       </section>
       <section className="workspace" aria-label="일정 확인 작업 영역">
-        <MonthCalendar selectedDate={selectedDate} scheduleCount={schedules.length} onSelectDate={(date) => { setSelectedDate(date); resetCheckResult(); }} />
+        <MonthCalendar selectedDate={selectedDate} scheduleCount={schedules.length} onSelectDate={(date) => { setEditingScheduleId(null); setSelectedDate(date); resetCheckResult(); }} />
         <div className="map-stack">
           <MapView
             locationName={locationName}
@@ -434,8 +458,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         </div>
       </section>
       <section className="schedule-section" aria-labelledby="schedule-title">
-        <div className="form-card">
-          <p className="eyebrow">DIRECT INPUT</p><h2 id="schedule-title">직접 일정 등록</h2>
+        <div className={`form-card ${editingScheduleId ? "is-editing" : ""}`} ref={formCardRef}>
+          <p className="eyebrow">{editingScheduleId ? "EDIT SCHEDULE" : "DIRECT INPUT"}</p><h2 id="schedule-title">{editingScheduleId ? "일정 수정" : "직접 일정 등록"}</h2>
           <div className="schedule-form">
             <label>날짜<input type="date" value={selectedDate} onChange={(event) => { setSelectedDate(event.target.value); resetCheckResult(); }} /></label>
             <label>시작 시간<input type="time" value={startTime} onChange={(event) => { setStartTime(event.target.value); resetCheckResult(); }} /></label>
@@ -447,11 +471,11 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
           </div>
           <label className="sharing-field"><input type="checkbox" checked={shareWithGroups} onChange={(event) => setShareWithGroups(event.target.checked)} /><span><strong>비공개 그룹에 공유</strong><small>공유를 끄면 이 일정은 나에게만 보입니다.</small></span><em>{shareWithGroups ? "그룹 공유" : "나만 보기"}</em></label>
           {message && <p className="form-message" role="status">{message}</p>}
-          <div className="form-actions"><button className="secondary-button" type="button" disabled={busy || !userId || !locationResolved} onClick={() => void checkConflict()}>{busy ? "확인 중…" : "충돌 먼저 확인"}</button><button className="primary-button" type="button" disabled={busy || !userId || !locationResolved} onClick={() => void saveSchedule()}>일정 등록</button></div>
+          <div className="form-actions">{editingScheduleId && <button className="cancel-button" type="button" disabled={busy} onClick={cancelEdit}>수정 취소</button>}<button className="secondary-button" type="button" disabled={busy || !userId || !locationResolved} onClick={() => void checkConflict()}>{busy ? "확인 중…" : "충돌 먼저 확인"}</button><button className="primary-button" type="button" disabled={busy || !userId || !locationResolved} onClick={() => void saveSchedule()}>{editingScheduleId ? "수정 저장" : "일정 등록"}</button></div>
         </div>
         <aside className="schedule-list">
           <div><p className="eyebrow">MY SCHEDULES</p><h2>{currentUser?.nickname ?? "사용자"}님의 일정</h2><p>{selectedDate}</p></div>
-          {schedules.length === 0 ? <div className="empty-state">이 날짜에 등록한 일정이 없습니다.</div> : <ul>{schedules.map((schedule) => <li key={schedule.id} className={schedule.riskLevel !== "low" ? "has-risk" : ""}><div className="schedule-summary"><strong>{formatMinutes(schedule.startMinutes)}–{formatMinutes(schedule.endMinutes)}</strong><span>{schedule.locationName} · 반경 {(schedule.radiusMeters / 1000).toFixed(1)}km</span><div className="schedule-badges"><small className={`sharing-state ${schedule.shareWithGroups ? "shared" : "private"}`}>{schedule.shareWithGroups ? "그룹 공유 중" : "나만 보기"}</small>{schedule.riskLevel !== "low" && <em>충돌 가능성 {schedule.riskLevel === "high" ? "높음" : "보통"}</em>}</div></div><div className="schedule-actions"><button className="sharing-button" type="button" disabled={sharingScheduleId !== null || deletingScheduleId !== null} onClick={() => void toggleScheduleSharing(schedule)}>{sharingScheduleId === schedule.id ? "변경 중…" : schedule.shareWithGroups ? "나만 보기" : "그룹 공유"}</button><button className="delete-button" type="button" disabled={deletingScheduleId !== null || sharingScheduleId !== null} onClick={() => void deleteSchedule(schedule.id)} aria-label={`${schedule.locationName} 일정 삭제`}>{deletingScheduleId === schedule.id ? "삭제 중…" : "삭제"}</button></div></li>)}</ul>}
+          {schedules.length === 0 ? <div className="empty-state">이 날짜에 등록한 일정이 없습니다.</div> : <ul>{schedules.map((schedule) => <li key={schedule.id} className={`${schedule.riskLevel !== "low" ? "has-risk" : ""} ${editingScheduleId === schedule.id ? "is-editing" : ""}`}><div className="schedule-summary"><strong>{formatMinutes(schedule.startMinutes)}–{formatMinutes(schedule.endMinutes)}</strong><span>{schedule.locationName} · 반경 {(schedule.radiusMeters / 1000).toFixed(1)}km</span><div className="schedule-badges"><small className={`sharing-state ${schedule.shareWithGroups ? "shared" : "private"}`}>{schedule.shareWithGroups ? "그룹 공유 중" : "나만 보기"}</small>{schedule.riskLevel !== "low" && <em>충돌 가능성 {schedule.riskLevel === "high" ? "높음" : "보통"}</em>}</div></div><div className="schedule-actions"><button className="edit-button" type="button" disabled={sharingScheduleId !== null || deletingScheduleId !== null} onClick={() => beginEdit(schedule)}>{editingScheduleId === schedule.id ? "수정 중" : "수정"}</button><button className="sharing-button" type="button" disabled={sharingScheduleId !== null || deletingScheduleId !== null} onClick={() => void toggleScheduleSharing(schedule)}>{sharingScheduleId === schedule.id ? "변경 중…" : schedule.shareWithGroups ? "나만 보기" : "그룹 공유"}</button><button className="delete-button" type="button" disabled={deletingScheduleId !== null || sharingScheduleId !== null} onClick={() => void deleteSchedule(schedule.id)} aria-label={`${schedule.locationName} 일정 삭제`}>{deletingScheduleId === schedule.id ? "삭제 중…" : "삭제"}</button></div></li>)}</ul>}
         </aside>
       </section>
       <section className="group-section" aria-labelledby="group-title">

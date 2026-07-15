@@ -36,8 +36,8 @@ export async function findScopedSchedules(input: ScheduleInput, client: Prisma.T
   return findScopedSchedulesForDate(input.userId, input.date, client);
 }
 
-export async function findOwnSchedules(input: ScheduleInput, client: Prisma.TransactionClient | typeof db = db): Promise<Schedule[]> {
-  return client.schedule.findMany({ where: { date: dateToDatabaseValue(input.date), userId: input.userId } });
+export async function findOwnSchedules(input: ScheduleInput, client: Prisma.TransactionClient | typeof db = db, excludeScheduleId?: string): Promise<Schedule[]> {
+  return client.schedule.findMany({ where: { date: dateToDatabaseValue(input.date), userId: input.userId, ...(excludeScheduleId ? { id: { not: excludeScheduleId } } : {}) } });
 }
 
 function overlapWindow(input: ScheduleInput, schedules: Schedule[]): AnonymousConflictResult["overlapWindow"] {
@@ -59,8 +59,8 @@ export function findPeerScheduleConflicts(input: ScheduleInput, schedules: Sched
   }).isConflict);
 }
 
-export async function findScheduleConflicts(input: ScheduleInput, client: Prisma.TransactionClient | typeof db = db): Promise<AnonymousConflictResult> {
-  const [ownSchedules, peerSchedules] = await Promise.all([findOwnSchedules(input, client), findScopedSchedules(input, client)]);
+export async function findScheduleConflicts(input: ScheduleInput, client: Prisma.TransactionClient | typeof db = db, excludeScheduleId?: string): Promise<AnonymousConflictResult> {
+  const [ownSchedules, peerSchedules] = await Promise.all([findOwnSchedules(input, client, excludeScheduleId), findScopedSchedules(input, client)]);
   const ownConflicts = ownSchedules.filter((schedule) => hasTimeOverlap(input, schedule));
   const anonymousConflicts = findPeerScheduleConflicts(input, peerSchedules);
   const count = anonymousConflicts.length;

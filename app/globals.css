@@ -143,6 +143,8 @@ button:not(:disabled):active { transform:translateY(1px); }
 .group-list span { color:var(--muted); font-size:11px; }
 .group-list code { color:var(--green); font-size:15px; font-weight:800; letter-spacing:.08em; }
 .form-card,.schedule-list { padding:clamp(24px,4vw,46px); }
+.form-card { scroll-margin-top:18px; }
+.form-card.is-editing { border-color:var(--green); box-shadow:inset 4px 0 var(--green); }
 .form-card h2,.schedule-list h2 { margin:0 0 25px; font-family:Georgia,serif; font-size:clamp(28px,3vw,40px); font-weight:500; }
 .schedule-form { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }
 .schedule-form label { display:flex; flex-direction:column; gap:8px; color:var(--muted); font-size:12px; font-weight:700; }
@@ -183,11 +185,14 @@ button:not(:disabled):active { transform:translateY(1px); }
 .secondary-button:hover:not(:disabled) { border-color:var(--green); color:var(--green); background:var(--green-soft); }
 .primary-button { color:white; background:var(--ink); box-shadow:0 7px 16px rgba(22,37,31,.16); }
 .primary-button:hover:not(:disabled) { border-color:var(--green); background:var(--green); box-shadow:0 9px 22px rgba(24,95,72,.2); }
+.cancel-button { margin-right:auto; color:var(--muted); background:transparent; }
+.cancel-button:hover:not(:disabled) { border-color:#9b4938; color:#9b4938; background:#fff4ef; }
 .form-message { margin:20px 0 0; padding:12px 14px; color:var(--green); background:var(--green-soft); font-size:13px; }
 .schedule-list>div>p:last-child { margin-top:-18px; color:var(--muted); font-size:12px; }
 .schedule-list ul { margin:24px 0 0; padding:0; list-style:none; }
 .schedule-list li { display:flex; flex-direction:column; align-items:stretch; gap:12px; padding:17px 0; border-top:1px solid var(--line); }
 .schedule-list li.has-risk { margin-inline:-12px; padding-inline:12px; background:#fff4ef; }
+.schedule-list li.is-editing { margin-inline:-12px; padding-inline:12px; box-shadow:inset 3px 0 var(--green); background:var(--green-soft); }
 .schedule-list li .schedule-summary { min-width:0; display:flex; flex-direction:column; gap:5px; }
 .schedule-list li span { color:var(--muted); font-size:12px; }
 .schedule-list li em { align-self:flex-start; padding:4px 7px; border-radius:999px; color:#9b4938; background:#f4d9cf; font-size:10px; font-style:normal; font-weight:800; }
@@ -199,6 +204,8 @@ button:not(:disabled):active { transform:translateY(1px); }
 .schedule-list li button { border:0; background:transparent; font-size:11px; font-weight:700; }
 .schedule-list li .sharing-button { padding:6px 8px; border:1px solid var(--line); border-radius:4px; color:var(--green); background:white; }
 .schedule-list li .sharing-button:hover:not(:disabled) { border-color:var(--green); background:var(--green-soft); }
+.schedule-list li .edit-button { padding:6px 8px; border:1px solid var(--line); border-radius:4px; color:var(--ink); background:white; }
+.schedule-list li .edit-button:hover:not(:disabled) { border-color:var(--ink); background:#f5f3ed; }
 .schedule-list li .delete-button { color:#9b4938; }
 .schedule-list li button:disabled { cursor:wait; opacity:.5; }
 .empty-state { margin-top:24px; padding:32px 15px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); color:var(--muted); text-align:center; font-size:13px; }
