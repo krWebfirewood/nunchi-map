@@ -123,6 +123,7 @@ button { cursor:pointer; }
 .schedule-list li div { display:flex; flex-direction:column; gap:5px; }
 .schedule-list li span { color:var(--muted); font-size:12px; }
 .schedule-list li button { border:0; color:#9b4938; background:transparent; font-size:12px; }
+.schedule-list li button:disabled { cursor:wait; opacity:.5; }
 .empty-state { margin-top:24px; padding:32px 15px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); color:var(--muted); text-align:center; font-size:13px; }
 .composer { margin:0 clamp(20px,5vw,76px) 70px; padding:clamp(26px,4vw,50px); display:grid; grid-template-columns:.8fr 1.2fr; gap:50px; align-items:end; }
 .composer h2 { margin:0 0 10px; font-family:Georgia,serif; font-size:clamp(28px,3vw,43px); font-weight:500; letter-spacing:-.03em; }

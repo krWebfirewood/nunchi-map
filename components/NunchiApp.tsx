@@ -40,6 +40,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [conflict, setConflict] = useState<Conflict | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [deletingScheduleId, setDeletingScheduleId] = useState<string | null>(null);
   const [naturalText, setNaturalText] = useState("이번 주 일요일 오후 2시부터 6시까지 영등포에서 영화 보고 싶어");
   const [analyzing, setAnalyzing] = useState(false);
   const [assumptions, setAssumptions] = useState<string[]>([]);
@@ -131,10 +132,23 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   }
 
   async function deleteSchedule(id: string) {
-    const response = await fetch(`/api/schedules/${id}`, { method: "DELETE" });
-    if (!response.ok) { const data = await response.json(); setMessage(data.message ?? "삭제에 실패했습니다."); return; }
-    setMessage("내 일정을 삭제했습니다.");
-    await loadSchedules();
+    if (deletingScheduleId) return;
+    setDeletingScheduleId(id);
+    try {
+      const response = await fetch(`/api/schedules/${id}`, { method: "DELETE" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null) as { message?: string } | null;
+        setMessage(data?.message ?? "삭제에 실패했습니다.");
+        await loadSchedules();
+        return;
+      }
+      setMessage("내 일정을 삭제했습니다.");
+      await loadSchedules();
+    } catch {
+      setMessage("일정 삭제 요청에 실패했습니다.");
+    } finally {
+      setDeletingScheduleId(null);
+    }
   }
 
   async function analyzeNaturalLanguage() {
@@ -289,7 +303,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         </div>
         <aside className="schedule-list">
           <div><p className="eyebrow">MY SCHEDULES</p><h2>{currentUser?.nickname ?? "사용자"}님의 일정</h2><p>{selectedDate}</p></div>
-          {schedules.length === 0 ? <div className="empty-state">이 날짜에 등록한 일정이 없습니다.</div> : <ul>{schedules.map((schedule) => <li key={schedule.id}><div><strong>{formatMinutes(schedule.startMinutes)}–{formatMinutes(schedule.endMinutes)}</strong><span>{schedule.locationName} · 반경 {(schedule.radiusMeters / 1000).toFixed(1)}km</span></div><button type="button" onClick={() => void deleteSchedule(schedule.id)} aria-label={`${schedule.locationName} 일정 삭제`}>삭제</button></li>)}</ul>}
+          {schedules.length === 0 ? <div className="empty-state">이 날짜에 등록한 일정이 없습니다.</div> : <ul>{schedules.map((schedule) => <li key={schedule.id}><div><strong>{formatMinutes(schedule.startMinutes)}–{formatMinutes(schedule.endMinutes)}</strong><span>{schedule.locationName} · 반경 {(schedule.radiusMeters / 1000).toFixed(1)}km</span></div><button type="button" disabled={deletingScheduleId !== null} onClick={() => void deleteSchedule(schedule.id)} aria-label={`${schedule.locationName} 일정 삭제`}>{deletingScheduleId === schedule.id ? "삭제 중…" : "삭제"}</button></li>)}</ul>}
         </aside>
       </section>
       <section className="group-section" aria-labelledby="group-title">
