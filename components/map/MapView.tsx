@@ -12,6 +12,7 @@ export interface MapSchedule {
   longitude: number;
   radiusMeters: number;
   source: "own" | "group";
+  shareWithGroups?: boolean;
 }
 
 interface MapViewProps {
@@ -108,7 +109,8 @@ export function MapView({
           const label = document.createElement("div");
           label.className = `day-zone-label ${representative.source} ${groupActive ? "active" : "inactive"}`;
           const place = document.createElement("strong");
-          place.textContent = `${representative.source === "group" ? "그룹" : "내 일정"} · ${representative.locationName}`;
+          const sourceLabel = representative.source === "group" ? "그룹" : representative.shareWithGroups === false ? "내 일정 · 나만 보기" : "내 일정";
+          place.textContent = `${sourceLabel} · ${representative.locationName}`;
           const times = document.createElement("span");
           times.textContent = group.map((schedule) => `${formatMinutes(schedule.startMinutes)}–${formatMinutes(schedule.endMinutes)}`).join(" · ");
           label.append(place, times);

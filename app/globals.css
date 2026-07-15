@@ -133,6 +133,9 @@ button:not(:disabled):active { transform:translateY(1px); }
 .group-form button { flex:0 0 auto; border:1px solid var(--ink); border-radius:4px; padding:0 13px; color:white; background:var(--ink); font-size:12px; font-weight:800; }
 .group-form button:hover:not(:disabled) { border-color:var(--green); background:var(--green); }
 .group-tools .form-message { grid-column:1/-1; margin:0; }
+.group-sharing-notice { grid-column:1/-1; padding:13px 15px; border-left:3px solid var(--green); background:var(--green-soft); }
+.group-sharing-notice strong { font-size:12px; }
+.group-sharing-notice p { margin:5px 0 0; color:var(--muted); font-size:11px; line-height:1.55; }
 .group-list { grid-column:1/-1; display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
 .group-list article { padding:17px; display:flex; justify-content:space-between; gap:16px; border:1px solid var(--line); background:#f7f4ec; }
 .group-list article>div { display:flex; flex-direction:column; gap:6px; }
@@ -167,6 +170,11 @@ button:not(:disabled):active { transform:translateY(1px); }
 .schedule-form .radius-field { grid-column:1/-1; display:grid; grid-template-columns:auto 1fr auto; align-items:center; }
 .radius-field input { grid-column:1/-1; padding:0; accent-color:var(--green); }
 .radius-field strong { grid-column:3; color:var(--green); }
+.schedule-form .sharing-field { grid-column:1/-1; padding:14px 16px; flex-direction:row; align-items:center; gap:12px; border:1px solid var(--line); background:#f7f4ec; cursor:pointer; }
+.sharing-field input[type="checkbox"] { flex:0 0 auto; width:19px; height:19px; padding:0; accent-color:var(--green); }
+.sharing-field span { display:flex; flex-direction:column; gap:4px; }
+.sharing-field strong { color:var(--ink); font-size:13px; }
+.sharing-field small { color:var(--muted); font-size:11px; font-weight:400; line-height:1.45; }
 .form-actions { margin-top:28px; display:flex; justify-content:flex-end; gap:9px; }
 .form-actions button { min-height:46px; padding:0 19px; border:1px solid var(--ink); border-radius:5px; font-weight:800; }
 .form-actions button:disabled { cursor:wait; opacity:.5; }
@@ -182,7 +190,14 @@ button:not(:disabled):active { transform:translateY(1px); }
 .schedule-list li div { display:flex; flex-direction:column; gap:5px; }
 .schedule-list li span { color:var(--muted); font-size:12px; }
 .schedule-list li em { align-self:flex-start; padding:4px 7px; border-radius:999px; color:#9b4938; background:#f4d9cf; font-size:10px; font-style:normal; font-weight:800; }
-.schedule-list li button { border:0; color:#9b4938; background:transparent; font-size:12px; }
+.schedule-list .sharing-state { align-self:flex-start; padding:4px 7px; border-radius:999px; font-size:10px; font-weight:800; }
+.sharing-state.shared { color:var(--green); background:var(--green-soft); }
+.sharing-state.private { color:var(--muted); background:#e9e7df; }
+.schedule-list li .schedule-actions { flex:0 0 auto; align-items:flex-end; gap:7px; }
+.schedule-list li button { border:0; background:transparent; font-size:11px; font-weight:700; }
+.schedule-list li .sharing-button { padding:6px 8px; border:1px solid var(--line); border-radius:4px; color:var(--green); background:white; }
+.schedule-list li .sharing-button:hover:not(:disabled) { border-color:var(--green); background:var(--green-soft); }
+.schedule-list li .delete-button { color:#9b4938; }
 .schedule-list li button:disabled { cursor:wait; opacity:.5; }
 .empty-state { margin-top:24px; padding:32px 15px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); color:var(--muted); text-align:center; font-size:13px; }
 .composer { margin:0 clamp(20px,5vw,76px) 70px; padding:clamp(26px,4vw,50px); display:grid; grid-template-columns:.8fr 1.2fr; gap:50px; align-items:end; }

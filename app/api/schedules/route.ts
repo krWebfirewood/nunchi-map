@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   const [ownSchedules, peerSchedules] = await Promise.all([
     db.schedule.findMany({
       where: { userId: user.id, date: dateToDatabaseValue(date) },
-      select: { id: true, date: true, startMinutes: true, endMinutes: true, locationName: true, latitude: true, longitude: true, radiusMeters: true },
+      select: { id: true, date: true, startMinutes: true, endMinutes: true, locationName: true, latitude: true, longitude: true, radiusMeters: true, shareWithGroups: true },
       orderBy: { startMinutes: "asc" },
     }),
     findScopedSchedulesForDate(user.id, date, db),
@@ -29,6 +29,7 @@ export async function GET(request: Request) {
     latitude: schedule.latitude,
     longitude: schedule.longitude,
     radiusMeters: schedule.radiusMeters,
+    shareWithGroups: true,
     source: "group" as const,
   }));
   return Response.json({ schedules, groupSchedules });

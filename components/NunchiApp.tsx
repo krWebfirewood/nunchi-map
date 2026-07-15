@@ -8,7 +8,7 @@ import { DEMO_LOCATIONS } from "@/lib/locations";
 import { searchKakaoPlaces } from "@/lib/kakao/maps";
 
 type User = { id: string; nickname: string };
-type Schedule = MapSchedule & { source: "own"; riskLevel: "low" | "medium" | "high" };
+type Schedule = MapSchedule & { source: "own"; riskLevel: "low" | "medium" | "high"; shareWithGroups: boolean };
 type Conflict = { hasConflict: boolean; ownScheduleConflict: boolean; anonymousConflictCount: number; overlapWindow: { startMinutes: number; endMinutes: number } | null; riskLevel: "low" | "medium" | "high" };
 type ParsedSchedule = { date: string; startTime: string; endTime: string; locationName: string; radiusMeters: number; assumptions: string[] };
 type RecommendationCandidate = { id: string; type: "location" | "time"; title: string; description: string; locationName: string; latitude: number; longitude: number; startMinutes: number; endMinutes: number; estimatedRisk: "low" };
@@ -51,10 +51,12 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [longitude, setLongitude] = useState<number>(DEMO_LOCATIONS[0].longitude);
   const [locationResolved, setLocationResolved] = useState(true);
   const [radiusMeters, setRadiusMeters] = useState(1500);
+  const [shareWithGroups, setShareWithGroups] = useState(true);
   const [conflict, setConflict] = useState<Conflict | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [deletingScheduleId, setDeletingScheduleId] = useState<string | null>(null);
+  const [sharingScheduleId, setSharingScheduleId] = useState<string | null>(null);
   const [naturalText, setNaturalText] = useState("이번 주 일요일 오후 2시부터 6시까지 영등포에서 영화 보고 싶어");
   const [draftingSchedule, setDraftingSchedule] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -127,7 +129,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   }
 
   function requestBody() {
-    return { date: selectedDate, startMinutes: toMinutes(startTime), endMinutes: toMinutes(endTime), locationName, latitude, longitude, radiusMeters };
+    return { date: selectedDate, startMinutes: toMinutes(startTime), endMinutes: toMinutes(endTime), locationName, latitude, longitude, radiusMeters, shareWithGroups };
   }
 
   function selectLocation(location: SelectedLocation) {
@@ -178,6 +180,29 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
       setMessage("일정 삭제 요청에 실패했습니다.");
     } finally {
       setDeletingScheduleId(null);
+    }
+  }
+
+  async function toggleScheduleSharing(schedule: Schedule) {
+    if (sharingScheduleId || deletingScheduleId) return;
+    setSharingScheduleId(schedule.id);
+    try {
+      const response = await fetch(`/api/schedules/${schedule.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shareWithGroups: !schedule.shareWithGroups }),
+      });
+      const data = await response.json().catch(() => null) as { message?: string } | null;
+      if (!response.ok) {
+        setMessage(data?.message ?? "공유 설정 변경에 실패했습니다.");
+        return;
+      }
+      setMessage(data?.message ?? "공유 설정을 변경했습니다.");
+      await loadSchedules();
+    } catch {
+      setMessage("공유 설정 변경 요청에 실패했습니다.");
+    } finally {
+      setSharingScheduleId(null);
     }
   }
 
@@ -419,18 +444,20 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
             <div className="selected-location"><span>선택한 장소</span><strong>{locationName}</strong><small>{locationAddress}</small></div>
             <label>위도<input value={latitude} readOnly /></label><label>경도<input value={longitude} readOnly /></label>
             <label className="radius-field">확인 반경 <strong>{(radiusMeters / 1000).toFixed(1)}km</strong><input type="range" min="100" max="3000" step="100" value={radiusMeters} onChange={(event) => { setRadiusMeters(Number(event.target.value)); resetCheckResult(); }} /></label>
+            <label className="sharing-field"><input type="checkbox" checked={shareWithGroups} onChange={(event) => setShareWithGroups(event.target.checked)} /><span><strong>비공개 그룹에 공유</strong><small>같은 그룹 구성원의 지도와 충돌 계산에 장소·시간을 사용합니다.</small></span></label>
           </div>
           {message && <p className="form-message" role="status">{message}</p>}
           <div className="form-actions"><button className="secondary-button" type="button" disabled={busy || !userId || !locationResolved} onClick={() => void checkConflict()}>{busy ? "확인 중…" : "충돌 먼저 확인"}</button><button className="primary-button" type="button" disabled={busy || !userId || !locationResolved} onClick={() => void saveSchedule()}>일정 등록</button></div>
         </div>
         <aside className="schedule-list">
           <div><p className="eyebrow">MY SCHEDULES</p><h2>{currentUser?.nickname ?? "사용자"}님의 일정</h2><p>{selectedDate}</p></div>
-          {schedules.length === 0 ? <div className="empty-state">이 날짜에 등록한 일정이 없습니다.</div> : <ul>{schedules.map((schedule) => <li key={schedule.id} className={schedule.riskLevel !== "low" ? "has-risk" : ""}><div><strong>{formatMinutes(schedule.startMinutes)}–{formatMinutes(schedule.endMinutes)}</strong><span>{schedule.locationName} · 반경 {(schedule.radiusMeters / 1000).toFixed(1)}km</span>{schedule.riskLevel !== "low" && <em>충돌 가능성 {schedule.riskLevel === "high" ? "높음" : "보통"}</em>}</div><button type="button" disabled={deletingScheduleId !== null} onClick={() => void deleteSchedule(schedule.id)} aria-label={`${schedule.locationName} 일정 삭제`}>{deletingScheduleId === schedule.id ? "삭제 중…" : "삭제"}</button></li>)}</ul>}
+          {schedules.length === 0 ? <div className="empty-state">이 날짜에 등록한 일정이 없습니다.</div> : <ul>{schedules.map((schedule) => <li key={schedule.id} className={schedule.riskLevel !== "low" ? "has-risk" : ""}><div><strong>{formatMinutes(schedule.startMinutes)}–{formatMinutes(schedule.endMinutes)}</strong><span>{schedule.locationName} · 반경 {(schedule.radiusMeters / 1000).toFixed(1)}km</span><small className={`sharing-state ${schedule.shareWithGroups ? "shared" : "private"}`}>{schedule.shareWithGroups ? "그룹 공유 중" : "나만 보기"}</small>{schedule.riskLevel !== "low" && <em>충돌 가능성 {schedule.riskLevel === "high" ? "높음" : "보통"}</em>}</div><div className="schedule-actions"><button className="sharing-button" type="button" disabled={sharingScheduleId !== null || deletingScheduleId !== null} onClick={() => void toggleScheduleSharing(schedule)}>{sharingScheduleId === schedule.id ? "변경 중…" : schedule.shareWithGroups ? "나만 보기" : "그룹 공유"}</button><button className="delete-button" type="button" disabled={deletingScheduleId !== null || sharingScheduleId !== null} onClick={() => void deleteSchedule(schedule.id)} aria-label={`${schedule.locationName} 일정 삭제`}>{deletingScheduleId === schedule.id ? "삭제 중…" : "삭제"}</button></div></li>)}</ul>}
         </aside>
       </section>
       <section className="group-section" aria-labelledby="group-title">
-        <div><p className="eyebrow">PRIVATE GROUPS</p><h2 id="group-title">충돌 확인 범위를 그룹으로 관리해요</h2><p>같은 비공개 그룹 구성원의 일정 위치와 시간은 지도에 공유됩니다. 사용자 이름은 표시하지 않습니다.</p></div>
+        <div><p className="eyebrow">PRIVATE GROUPS</p><h2 id="group-title">충돌 확인 범위를 그룹으로 관리해요</h2><p>공유를 켠 일정의 위치와 시간만 같은 그룹 지도에 표시됩니다. 사용자 이름은 표시하지 않습니다.</p></div>
         <div className="group-tools">
+          <div className="group-sharing-notice"><strong>그룹 공유 안내</strong><p>그룹을 만들거나 참여해도 기존의 `나만 보기` 일정은 공개되지 않습니다. 각 일정에서 언제든 공유를 바꿀 수 있어요.</p></div>
           <div className="group-form"><label>새 그룹 이름<input value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="예: 디자인팀 주말" /></label><button type="button" disabled={groupBusy} onClick={() => void createGroup()}>그룹 만들기</button></div>
           <div className="group-form"><label>초대 코드<input value={inviteCode} onChange={(event) => setInviteCode(event.target.value.toUpperCase())} placeholder="예: NUNCHI" /></label><button type="button" disabled={groupBusy} onClick={() => void joinGroup()}>그룹 참여</button></div>
           {groupMessage && <p className="form-message" role="status">{groupMessage}</p>}

@@ -40,6 +40,7 @@ describe("일정 저장 정책", () => {
       latitude: 37.5345,
       longitude: 126.9026,
       radiusMeters: 500,
+      shareWithGroups: true,
       createdAt: new Date(),
     } satisfies Schedule;
     const conflicts = findPeerScheduleConflicts({

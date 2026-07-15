@@ -9,6 +9,7 @@ export const scheduleInputSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   radiusMeters: z.number().int().min(100).max(10000),
+  shareWithGroups: z.boolean().default(true),
 }).refine((value) => value.startMinutes < value.endMinutes, {
   message: "종료 시간은 시작 시간보다 늦어야 합니다.",
   path: ["endMinutes"],

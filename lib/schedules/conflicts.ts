@@ -29,7 +29,7 @@ export async function findScopedSchedulesForDate(userId: string, date: string, c
   });
   const peerUserIds = uniquePeerUserIds(userId, peerMemberships.map(({ userId }) => userId));
   if (peerUserIds.length === 0) return [];
-  return client.schedule.findMany({ where: { date: dateToDatabaseValue(date), userId: { in: peerUserIds } }, orderBy: { startMinutes: "asc" } });
+  return client.schedule.findMany({ where: { date: dateToDatabaseValue(date), userId: { in: peerUserIds }, shareWithGroups: true }, orderBy: { startMinutes: "asc" } });
 }
 
 export async function findScopedSchedules(input: ScheduleInput, client: Prisma.TransactionClient | typeof db = db): Promise<Schedule[]> {
