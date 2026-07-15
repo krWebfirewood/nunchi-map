@@ -9,13 +9,14 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const date = url.searchParams.get("date");
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return Response.json({ message: "날짜가 필요합니다." }, { status: 400 });
-  const [ownSchedules, peerSchedules] = await Promise.all([
+  const [ownSchedules, peerSchedules, totalScheduleCount] = await Promise.all([
     db.schedule.findMany({
       where: { userId: user.id, date: dateToDatabaseValue(date) },
       select: { id: true, date: true, startMinutes: true, endMinutes: true, locationName: true, latitude: true, longitude: true, radiusMeters: true, shareWithGroups: true },
       orderBy: { startMinutes: "asc" },
     }),
     findScopedSchedulesForDate(user.id, date, db),
+    db.schedule.count({ where: { userId: user.id } }),
   ]);
   const schedules = ownSchedules.map((schedule) => {
     const conflictCount = findPeerScheduleConflicts({ ...schedule, userId: user.id, date }, peerSchedules).length;
@@ -32,7 +33,7 @@ export async function GET(request: Request) {
     shareWithGroups: true,
     source: "group" as const,
   }));
-  return Response.json({ schedules, groupSchedules });
+  return Response.json({ schedules, groupSchedules, totalScheduleCount });
 }
 
 export async function POST(request: Request) {

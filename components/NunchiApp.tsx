@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { MonthCalendar } from "@/components/calendar/MonthCalendar";
 import { LocationSearch, type SelectedLocation } from "@/components/map/LocationSearch";
 import { MapView, type MapSchedule } from "@/components/map/MapView";
+import { GettingStarted } from "@/components/onboarding/GettingStarted";
 import { DEMO_LOCATIONS } from "@/lib/locations";
 import { searchKakaoPlaces } from "@/lib/kakao/maps";
 
@@ -36,6 +37,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [authBusy, setAuthBusy] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
   const [groups, setGroups] = useState<Group[]>([]);
+  const [groupsLoadedFor, setGroupsLoadedFor] = useState("");
   const [groupName, setGroupName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [groupMessage, setGroupMessage] = useState("");
@@ -45,6 +47,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [groupSchedules, setGroupSchedules] = useState<MapSchedule[]>([]);
+  const [hasAnySchedule, setHasAnySchedule] = useState(false);
+  const [schedulesLoadedFor, setSchedulesLoadedFor] = useState("");
   const [calendarRefreshKey, setCalendarRefreshKey] = useState(0);
   const [startTime, setStartTime] = useState("14:00");
   const [endTime, setEndTime] = useState("18:00");
@@ -62,6 +66,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [sharingScheduleId, setSharingScheduleId] = useState<string | null>(null);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
   const formCardRef = useRef<HTMLDivElement>(null);
+  const groupNameRef = useRef<HTMLInputElement>(null);
   const [naturalText, setNaturalText] = useState("이번 주 일요일 오후 2시부터 6시까지 영등포에서 영화 보고 싶어");
   const [draftingSchedule, setDraftingSchedule] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -74,6 +79,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const mapSchedules = useMemo(() => [...schedules, ...groupSchedules], [groupSchedules, schedules]);
   const currentUser = users.find((user) => user.id === userId) ?? (userId ? { id: userId, nickname: sessionNickname } : undefined);
   const conflictState = conflict ? (conflict.hasConflict ? "conflict" : "safe") : "unchecked";
+  const onboardingReady = groupsLoadedFor === userId && schedulesLoadedFor === userId;
 
   const loadSchedules = useCallback(async () => {
     if (!userId) return;
@@ -81,6 +87,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     const data = await response.json();
     setSchedules(response.ok ? data.schedules : []);
     setGroupSchedules(response.ok ? data.groupSchedules : []);
+    setHasAnySchedule(response.ok && data.totalScheduleCount > 0);
     if (response.ok) setCalendarRefreshKey((value) => value + 1);
   }, [selectedDate, userId]);
 
@@ -107,8 +114,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     const controller = new AbortController();
     void fetch("/api/groups", { signal: controller.signal })
       .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
-      .then(({ ok, data }) => setGroups(ok ? data.groups : []))
-      .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === "AbortError")) setGroups([]); });
+      .then(({ ok, data }) => { setGroups(ok ? data.groups : []); setGroupsLoadedFor(userId); })
+      .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === "AbortError")) { setGroups([]); setGroupsLoadedFor(userId); } });
     return () => controller.abort();
   }, [userId]);
 
@@ -117,8 +124,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     const controller = new AbortController();
     void fetch(`/api/schedules?date=${selectedDate}`, { signal: controller.signal })
       .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
-      .then(({ ok, data }) => { setSchedules(ok ? data.schedules : []); setGroupSchedules(ok ? data.groupSchedules : []); })
-      .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === "AbortError")) { setSchedules([]); setGroupSchedules([]); } });
+      .then(({ ok, data }) => { setSchedules(ok ? data.schedules : []); setGroupSchedules(ok ? data.groupSchedules : []); setHasAnySchedule(ok && data.totalScheduleCount > 0); setSchedulesLoadedFor(userId); })
+      .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === "AbortError")) { setSchedules([]); setGroupSchedules([]); setHasAnySchedule(false); setSchedulesLoadedFor(userId); } });
     return () => controller.abort();
   }, [selectedDate, userId]);
 
@@ -402,7 +409,16 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
 
   async function logout() {
     await fetch("/api/session", { method: "DELETE" });
-    setUserId(""); setSessionNickname(""); setSchedules([]); setGroupSchedules([]); setGroups([]); resetCheckResult();
+    setUserId(""); setSessionNickname(""); setSchedules([]); setGroupSchedules([]); setGroups([]); setHasAnySchedule(false); setGroupsLoadedFor(""); setSchedulesLoadedFor(""); resetCheckResult();
+  }
+
+  function focusScheduleSetup() {
+    formCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function focusGroupSetup() {
+    document.getElementById("groups")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => groupNameRef.current?.focus(), 350);
   }
 
   async function createGroup() {
@@ -482,6 +498,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         <div><p className="eyebrow">PRIVATE ROUTE PLANNER</p><h1>마주치고 싶지 않은 날,<br />조금 다르게 움직여요.</h1><p className="hero-description">다른 사람의 이름이나 정확한 일정을 보여주지 않고,<br />선택한 시간과 지역의 익명 겹침 가능성만 알려드립니다.</p></div>
         <aside className="privacy-note"><span className="privacy-icon" aria-hidden="true">✓</span><div><strong>비공개 그룹 공유</strong><p>같은 그룹에는 일정 위치를 표시하지만 사용자 이름은 공개하지 않아요.</p></div></aside>
       </section>
+      {onboardingReady && (groups.length === 0 || !hasAnySchedule) && <GettingStarted hasGroup={groups.length > 0} hasSchedule={hasAnySchedule} onGroupSetup={focusGroupSetup} onScheduleSetup={focusScheduleSetup} />}
       <section className="workspace" aria-label="일정 확인 작업 영역">
         <MonthCalendar key={`${userId}-${selectedDate.slice(0, 7)}`} selectedDate={selectedDate} scheduleCount={schedules.length} refreshKey={calendarRefreshKey} onSelectDate={(date) => { setEditingScheduleId(null); setSelectedDate(date); resetCheckResult(); }} />
         <div className="map-stack">
@@ -521,18 +538,18 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         </div>
         <aside className="schedule-list">
           <div><p className="eyebrow">MY SCHEDULES</p><h2>{currentUser?.nickname ?? "사용자"}님의 일정</h2><p>{selectedDate}</p></div>
-          {schedules.length === 0 ? <div className="empty-state">이 날짜에 등록한 일정이 없습니다.</div> : <ul>{schedules.map((schedule) => <li key={schedule.id} className={`${schedule.riskLevel !== "low" ? "has-risk" : ""} ${editingScheduleId === schedule.id ? "is-editing" : ""}`}><div className="schedule-summary"><strong>{formatMinutes(schedule.startMinutes)}–{formatMinutes(schedule.endMinutes)}</strong><span>{schedule.locationName} · 반경 {(schedule.radiusMeters / 1000).toFixed(1)}km</span><div className="schedule-badges"><small className={`sharing-state ${schedule.shareWithGroups ? "shared" : "private"}`}>{schedule.shareWithGroups ? "그룹 공유 중" : "나만 보기"}</small>{schedule.riskLevel !== "low" && <em>충돌 가능성 {schedule.riskLevel === "high" ? "높음" : "보통"}</em>}</div></div><div className="schedule-actions"><button className="edit-button" type="button" disabled={sharingScheduleId !== null || deletingScheduleId !== null} onClick={() => beginEdit(schedule)}>{editingScheduleId === schedule.id ? "수정 중" : "수정"}</button><button className="sharing-button" type="button" disabled={sharingScheduleId !== null || deletingScheduleId !== null} onClick={() => void toggleScheduleSharing(schedule)}>{sharingScheduleId === schedule.id ? "변경 중…" : schedule.shareWithGroups ? "나만 보기" : "그룹 공유"}</button><button className="delete-button" type="button" disabled={deletingScheduleId !== null || sharingScheduleId !== null} onClick={() => void deleteSchedule(schedule.id)} aria-label={`${schedule.locationName} 일정 삭제`}>{deletingScheduleId === schedule.id ? "삭제 중…" : "삭제"}</button></div></li>)}</ul>}
+          {schedules.length === 0 ? <div className="empty-state empty-action"><strong>이 날짜에는 아직 일정이 없어요.</strong><span>직접 입력하거나 문장으로 일정을 추가해 보세요.</span><button type="button" onClick={focusScheduleSetup}>첫 일정 등록하기</button></div> : <ul>{schedules.map((schedule) => <li key={schedule.id} className={`${schedule.riskLevel !== "low" ? "has-risk" : ""} ${editingScheduleId === schedule.id ? "is-editing" : ""}`}><div className="schedule-summary"><strong>{formatMinutes(schedule.startMinutes)}–{formatMinutes(schedule.endMinutes)}</strong><span>{schedule.locationName} · 반경 {(schedule.radiusMeters / 1000).toFixed(1)}km</span><div className="schedule-badges"><small className={`sharing-state ${schedule.shareWithGroups ? "shared" : "private"}`}>{schedule.shareWithGroups ? "그룹 공유 중" : "나만 보기"}</small>{schedule.riskLevel !== "low" && <em>충돌 가능성 {schedule.riskLevel === "high" ? "높음" : "보통"}</em>}</div></div><div className="schedule-actions"><button className="edit-button" type="button" disabled={sharingScheduleId !== null || deletingScheduleId !== null} onClick={() => beginEdit(schedule)}>{editingScheduleId === schedule.id ? "수정 중" : "수정"}</button><button className="sharing-button" type="button" disabled={sharingScheduleId !== null || deletingScheduleId !== null} onClick={() => void toggleScheduleSharing(schedule)}>{sharingScheduleId === schedule.id ? "변경 중…" : schedule.shareWithGroups ? "나만 보기" : "그룹 공유"}</button><button className="delete-button" type="button" disabled={deletingScheduleId !== null || sharingScheduleId !== null} onClick={() => void deleteSchedule(schedule.id)} aria-label={`${schedule.locationName} 일정 삭제`}>{deletingScheduleId === schedule.id ? "삭제 중…" : "삭제"}</button></div></li>)}</ul>}
         </aside>
       </section>
-      <section className="group-section" aria-labelledby="group-title">
+      <section className="group-section" id="groups" aria-labelledby="group-title">
         <div><p className="eyebrow">PRIVATE GROUPS</p><h2 id="group-title">충돌 확인 범위를 그룹으로 관리해요</h2><p>공유를 켠 일정의 위치와 시간만 같은 그룹 지도에 표시됩니다. 사용자 이름은 표시하지 않습니다.</p></div>
         <div className="group-tools">
           <div className="group-sharing-notice"><strong>그룹 공유 안내</strong><p>그룹을 만들거나 참여해도 기존의 `나만 보기` 일정은 공개되지 않습니다. 각 일정에서 언제든 공유를 바꿀 수 있어요.</p></div>
-          <div className="group-form"><label>새 그룹 이름<input value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="예: 디자인팀 주말" /></label><button type="button" disabled={groupBusy} onClick={() => void createGroup()}>그룹 만들기</button></div>
+          <div className="group-form"><label>새 그룹 이름<input ref={groupNameRef} value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="예: 디자인팀 주말" /></label><button type="button" disabled={groupBusy} onClick={() => void createGroup()}>그룹 만들기</button></div>
           <div className="group-form"><label>초대 코드<input value={inviteCode} onChange={(event) => setInviteCode(event.target.value.toUpperCase())} placeholder="예: NUNCHI" /></label><button type="button" disabled={groupBusy} onClick={() => void joinGroup()}>그룹 참여</button></div>
           {groupMessage && <p className="form-message" role="status">{groupMessage}</p>}
         </div>
-        <div className="group-list">{groups.length === 0 ? <div className="empty-state">참여한 그룹이 없습니다. 그룹을 만들거나 초대 코드로 참여해 주세요.</div> : groups.map((group) => <article key={group.id} className={group.role === "owner" ? "is-owner" : ""}>
+        <div className="group-list">{groups.length === 0 ? <div className="empty-state empty-action"><strong>아직 연결된 그룹이 없어요.</strong><span>새 그룹을 만들거나 받은 초대 코드로 참여하세요.</span><button type="button" onClick={focusGroupSetup}>그룹 만들기</button></div> : groups.map((group) => <article key={group.id} className={group.role === "owner" ? "is-owner" : ""}>
           <div className="group-card-heading"><div><strong>{group.name}</strong><span>익명 구성원 {group.memberCount}명</span></div><em>{group.role === "owner" ? "내가 만든 그룹" : "참여한 그룹"}</em></div>
           <div className="group-invite"><span>초대 코드</span><div><code>{group.inviteCode}</code><button type="button" disabled={groupActionId !== null} onClick={() => void copyInviteCode(group)} aria-label={`${group.name} 초대 코드 복사`}>{copiedGroupId === group.id ? "복사됨" : "복사"}</button></div></div>
           <div className="group-card-actions"><small>{group.role === "owner" ? "생성자만 이 그룹을 삭제할 수 있습니다." : "탈퇴하면 이 그룹의 공유 일정이 보이지 않습니다."}</small><button type="button" className={group.role === "owner" ? "delete-group" : "leave-group"} disabled={groupActionId !== null || groupBusy} onClick={() => void runGroupAction(group)}>{groupActionId === group.id ? "처리 중…" : group.role === "owner" ? "그룹 삭제" : "그룹 탈퇴"}</button></div>
