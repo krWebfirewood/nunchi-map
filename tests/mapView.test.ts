@@ -9,7 +9,6 @@ const baseProps = {
   longitude: 126.9026,
   radiusMeters: 500,
   conflictState: "unchecked" as const,
-  conflictRiskLevel: null,
   selectedDate: "2030-01-15",
   dataState: "ready" as const,
   liveLocations: [],

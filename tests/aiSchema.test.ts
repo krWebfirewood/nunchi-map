@@ -16,4 +16,5 @@ describe("parsedScheduleSchema", () => {
   it("전국의 임의 장소명을 허용한다", () => expect(parsedScheduleSchema.safeParse({ ...valid, locationName: "마포구청역" }).success).toBe(true));
   it("빈 장소명은 거부한다", () => expect(parsedScheduleSchema.safeParse({ ...valid, locationName: " " }).success).toBe(false));
   it("잘못된 시간 순서를 거부한다", () => expect(parsedScheduleSchema.safeParse({ ...valid, endTime: "13:00" }).success).toBe(false));
+  it("rejects an AI radius above 1.5km", () => expect(parsedScheduleSchema.safeParse({ ...valid, radiusMeters: 1600 }).success).toBe(false));
 });

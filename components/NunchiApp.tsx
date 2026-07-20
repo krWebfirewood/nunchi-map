@@ -268,7 +268,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     setLocationAddress("등록된 일정 위치");
     setLatitude(schedule.latitude);
     setLongitude(schedule.longitude);
-    setRadiusMeters(schedule.radiusMeters);
+    setRadiusMeters(Math.min(schedule.radiusMeters, 1500));
     setShareWithGroups(schedule.shareWithGroups);
     resetCheckResult();
     requestAnimationFrame(() => formCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
@@ -684,7 +684,6 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
             longitude={longitude}
             radiusMeters={radiusMeters}
             conflictState={conflictState}
-            conflictRiskLevel={conflict?.riskLevel ?? null}
             schedules={mapSchedules}
             selectedDate={selectedDate}
             dataState={schedulesLoading ? "loading" : scheduleLoadError ? "error" : "ready"}
@@ -711,7 +710,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
             <LocationSearch selectedName={locationName} onSelect={selectLocation} />
             <div className="selected-location"><span>선택한 장소</span><strong>{locationName}</strong><small>{locationAddress}</small></div>
             <label>위도<input value={latitude} readOnly /></label><label>경도<input value={longitude} readOnly /></label>
-            <label className="radius-field">확인 반경 <strong>{(radiusMeters / 1000).toFixed(1)}km</strong><input type="range" min="100" max="3000" step="100" value={radiusMeters} onChange={(event) => { setRadiusMeters(Number(event.target.value)); resetCheckResult(); }} /></label>
+            <label className="radius-field">확인 반경 <strong>{(radiusMeters / 1000).toFixed(1)}km</strong><input type="range" min="100" max="1500" step="100" value={radiusMeters} onChange={(event) => { setRadiusMeters(Number(event.target.value)); resetCheckResult(); }} /></label>
           </div>
           <label className="sharing-field"><input type="checkbox" checked={shareWithGroups} onChange={(event) => setShareWithGroups(event.target.checked)} /><span><strong>비공개 그룹에 공유</strong><small>공유를 끄면 이 일정은 나에게만 보입니다.</small></span><em>{shareWithGroups ? "그룹 공유" : "나만 보기"}</em></label>
           {message && <p className="form-message" role="status">{message}</p>}

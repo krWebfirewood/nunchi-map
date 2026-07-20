@@ -52,6 +52,7 @@ export interface KakaoMaps {
     map: KakaoMap;
     position: KakaoLatLng;
     content: HTMLElement | string;
+    xAnchor?: number;
     yAnchor?: number;
     zIndex?: number;
   }) => KakaoOverlay;

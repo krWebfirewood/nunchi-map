@@ -1,4 +1,4 @@
-import type { PinMood } from "@/lib/map/pinMood";
+type PinMood = "neutral" | "happy" | "worried" | "frown";
 
 interface NunchiPinIconProps {
   mood?: PinMood;

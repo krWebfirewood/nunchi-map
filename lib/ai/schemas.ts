@@ -5,7 +5,7 @@ export const parsedScheduleSchema = z.object({
   startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   endTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   locationName: z.string().trim().min(1).max(80),
-  radiusMeters: z.number().int().min(100).max(3000),
+  radiusMeters: z.number().int().min(100).max(1500),
   preferences: z.object({
     maxTravelMinutes: z.number().int().positive().nullable(),
     needsCinema: z.boolean().nullable(),
@@ -35,7 +35,7 @@ export const parsedScheduleJsonSchema = {
     startTime: { type: "string" },
     endTime: { type: "string" },
     locationName: { type: "string", minLength: 1, maxLength: 80 },
-    radiusMeters: { type: "integer", minimum: 100, maximum: 3000 },
+    radiusMeters: { type: "integer", minimum: 100, maximum: 1500 },
     assumptions: { type: "array", items: { type: "string" } },
   },
   required: ["date", "startTime", "endTime", "locationName", "radiusMeters", "assumptions"],
