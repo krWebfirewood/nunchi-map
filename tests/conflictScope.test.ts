@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findPeerScheduleConflicts, shouldBlockScheduleCreation, uniquePeerUserIds, type AnonymousConflictResult } from "@/lib/schedules/conflicts";
+import { findPeerScheduleConflicts, scheduleRiskLevel, shouldBlockScheduleCreation, uniquePeerUserIds, type AnonymousConflictResult } from "@/lib/schedules/conflicts";
 import type { Schedule } from "@prisma/client";
 
 describe("uniquePeerUserIds", () => {
@@ -25,8 +25,14 @@ describe("일정 저장 정책", () => {
     expect(shouldBlockScheduleCreation(warningConflict)).toBe(false);
   });
 
-  it("본인 일정 시간 충돌은 계속 저장을 차단한다", () => {
-    expect(shouldBlockScheduleCreation({ ...warningConflict, ownScheduleConflict: true })).toBe(true);
+  it("본인 일정 시간 충돌도 경고만 하고 저장을 허용한다", () => {
+    expect(shouldBlockScheduleCreation({ ...warningConflict, ownScheduleConflict: true })).toBe(false);
+  });
+
+  it("본인 일정과 겹치는 저장 일정은 위험도 높음으로 표시한다", () => {
+    expect(scheduleRiskLevel(true, 0)).toBe("high");
+    expect(scheduleRiskLevel(false, 1)).toBe("medium");
+    expect(scheduleRiskLevel(false, 0)).toBe("low");
   });
 
   it("같은 시간과 지역의 그룹 일정을 위험 대상으로 찾는다", () => {

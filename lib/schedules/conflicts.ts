@@ -13,7 +13,14 @@ export interface AnonymousConflictResult {
 }
 
 export function shouldBlockScheduleCreation(conflict: AnonymousConflictResult): boolean {
-  return conflict.ownScheduleConflict;
+  void conflict;
+  return false;
+}
+
+export function scheduleRiskLevel(hasOwnOverlap: boolean, peerConflictCount: number): AnonymousConflictResult["riskLevel"] {
+  if (hasOwnOverlap || peerConflictCount > 1) return "high";
+  if (peerConflictCount === 1) return "medium";
+  return "low";
 }
 
 export function uniquePeerUserIds(currentUserId: string, memberUserIds: string[]): string[] {

@@ -164,7 +164,7 @@ button:not(:disabled):active { transform:translateY(1px); }
 .day-zone-label.group { background:rgba(255,248,244,.95); }
 .day-zone-label.group.active { border-color:#b94f3b; box-shadow:0 6px 16px rgba(185,79,59,.18); }
 .day-zone-label.group.active span { color:#9b4938; font-weight:800; }
-.result-panel { min-height:230px; padding:clamp(24px,3vw,38px); display:flex; flex-direction:column; justify-content:center; background:#e3ece5; }
+.result-panel { min-height:230px; padding:clamp(24px,3vw,38px); display:flex; flex-direction:column; justify-content:center; scroll-margin-top:76px; background:#e3ece5; }
 .result-panel.has-conflict { background:#f3dfd7; }
 .result-panel h2 { max-width:480px; margin:0 0 12px; font-family:Georgia,serif; font-size:clamp(28px,3vw,40px); line-height:1.1; font-weight:500; letter-spacing:-.035em; }
 .result-panel p { max-width:540px; color:var(--muted); line-height:1.7; }
@@ -174,7 +174,12 @@ button:not(:disabled):active { transform:translateY(1px); }
 .overlap-time { width:min(100%,420px); margin-top:10px; padding:12px 0; display:flex; justify-content:space-between; border-top:1px solid rgba(22,37,31,.18); border-bottom:1px solid rgba(22,37,31,.18); }
 .overlap-time span { color:var(--muted); font-size:13px; }
 .overlap-time strong { font-family:Georgia,serif; font-size:20px; font-weight:500; }
+.result-actions { margin-top:18px; display:flex; align-items:center; flex-wrap:wrap; gap:9px; }
+.map-check-button { min-height:44px; padding:0 17px; border:1px solid var(--green); border-radius:5px; color:white; background:var(--green); box-shadow:0 7px 16px rgba(24,95,72,.18); font-weight:800; }
+.map-check-button:hover:not(:disabled) { border-color:var(--ink); background:var(--ink); box-shadow:0 9px 22px rgba(22,37,31,.2); }
+.map-check-button:disabled { cursor:wait; opacity:.52; }
 .recommend-button { align-self:flex-start; margin-top:16px; min-height:42px; padding:0 17px; border:1px solid var(--ink); border-radius:5px; color:white; background:var(--ink); box-shadow:0 6px 15px rgba(22,37,31,.14); font-weight:800; }
+.result-actions .recommend-button { margin-top:0; }
 .recommend-button:hover:not(:disabled) { border-color:var(--green); background:var(--green); }
 .recommend-button:disabled { cursor:wait; opacity:.55; }
 .recommendation-box { width:100%; margin-top:18px; padding-top:16px; border-top:1px solid rgba(22,37,31,.18); }
@@ -277,6 +282,8 @@ button:not(:disabled):active { transform:translateY(1px); }
 .form-actions button:disabled { cursor:wait; opacity:.5; }
 .secondary-button { color:var(--ink); background:white; }
 .secondary-button:hover:not(:disabled) { border-color:var(--green); color:var(--green); background:var(--green-soft); }
+.map-check-link { min-height:46px; padding:0 5px; display:inline-flex; align-items:center; color:var(--green); font-size:11px; font-weight:800; text-underline-offset:3px; }
+.map-check-link:hover { color:var(--ink); }
 .primary-button { color:white; background:var(--ink); box-shadow:0 7px 16px rgba(22,37,31,.16); }
 .primary-button:hover:not(:disabled) { border-color:var(--green); background:var(--green); box-shadow:0 9px 22px rgba(24,95,72,.2); }
 .cancel-button { margin-right:auto; color:var(--muted); background:transparent; }
@@ -346,6 +353,8 @@ footer { padding:0 20px 36px; color:var(--muted); text-align:center; font-size:1
   .kakao-map-shell,.mock-map { min-height:52vh; border-radius:8px 8px 0 0; }
   .result-panel { min-height:0; padding:22px 18px; border-radius:0 0 8px 8px; }
   .result-panel h2 { font-size:28px; }
+  .result-actions { align-items:stretch; flex-direction:column; }
+  .result-actions button { width:100%; }
   .calendar-card,.form-card,.schedule-list,.group-section { border-radius:8px; }
   .schedule-section { gap:12px; }
   .form-card,.schedule-list { padding:22px 16px; }
@@ -388,6 +397,7 @@ footer { padding:0 20px 36px; color:var(--muted); text-align:center; font-size:1
   .sharing-field>em { margin-left:30px; }
   .form-actions { flex-direction:column; }
   .form-actions button { width:100%; }
+  .map-check-link { min-height:38px; justify-content:center; order:-1; }
   .group-form { flex-direction:column; }
   .group-form button { min-height:42px; }
   .group-invite,.group-card-actions { align-items:stretch; flex-direction:column; }

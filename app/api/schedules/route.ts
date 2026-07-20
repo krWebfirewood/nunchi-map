@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth/session";
-import { findPeerScheduleConflicts, findScheduleConflicts, findScopedSchedulesForDate, shouldBlockScheduleCreation } from "@/lib/schedules/conflicts";
+import { findPeerScheduleConflicts, findScheduleConflicts, findScopedSchedulesForDate, scheduleRiskLevel, shouldBlockScheduleCreation } from "@/lib/schedules/conflicts";
 import { dateToDatabaseValue, scheduleInputSchema } from "@/lib/schedules/schema";
+import { hasTimeOverlap } from "@/lib/conflict/timeOverlap";
 
 export async function GET(request: Request) {
   const user = await getSessionUser(request);
@@ -20,7 +21,8 @@ export async function GET(request: Request) {
   ]);
   const schedules = ownSchedules.map((schedule) => {
     const conflictCount = findPeerScheduleConflicts({ ...schedule, userId: user.id, date }, peerSchedules).length;
-    return { ...schedule, source: "own" as const, riskLevel: conflictCount > 1 ? "high" as const : conflictCount === 1 ? "medium" as const : "low" as const };
+    const overlapsOwnSchedule = ownSchedules.some((other) => other.id !== schedule.id && hasTimeOverlap(schedule, other));
+    return { ...schedule, source: "own" as const, riskLevel: scheduleRiskLevel(overlapsOwnSchedule, conflictCount) };
   });
   const groupSchedules = peerSchedules.map((schedule) => ({
     id: `group-${schedule.id}`,
@@ -48,16 +50,18 @@ export async function POST(request: Request) {
     const schedule = await transaction.schedule.create({ data: { ...parsed.data, date: dateToDatabaseValue(parsed.data.date) } });
     return { conflict, schedule };
   });
-  if (!result.schedule) return Response.json({
-    message: "이미 등록한 내 일정과 시간이 겹쳐 저장하지 않았습니다.",
-    conflict: result.conflict,
-  }, { status: 409 });
+  if (!result.schedule) return Response.json({ message: "일정 저장에 실패했습니다.", conflict: result.conflict }, { status: 500 });
   const schedule = result.schedule;
+  const message = result.conflict.ownScheduleConflict
+    ? result.conflict.anonymousConflictCount > 0
+      ? "일정을 등록했습니다. 내 일정 및 그룹 일정과 겹칠 가능성이 높습니다."
+      : "일정을 등록했습니다. 이미 등록한 내 일정과 시간이 겹칩니다."
+    : result.conflict.hasConflict
+      ? `일정을 등록했습니다. 그룹 일정과의 충돌 가능성이 ${result.conflict.riskLevel === "high" ? "높습니다" : "있습니다"}.`
+      : "일정을 안전하게 등록했습니다.";
   return Response.json({
     schedule,
     conflict: result.conflict,
-    message: result.conflict.hasConflict
-      ? `일정을 등록했습니다. 그룹 일정과의 충돌 가능성이 ${result.conflict.riskLevel === "high" ? "높습니다" : "있습니다"}.`
-      : "일정을 안전하게 등록했습니다.",
+    message,
   }, { status: 201 });
 }

@@ -46,11 +46,18 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const exists = await db.schedule.findUnique({ where: { id }, select: { id: true } });
     return Response.json({ message: exists ? "본인의 일정만 변경할 수 있습니다." : "일정을 찾을 수 없습니다." }, { status: exists ? 403 : 404 });
   }
-  if (!result.schedule) return Response.json({ message: "다른 내 일정과 시간이 겹쳐 수정하지 않았습니다.", conflict: result.conflict }, { status: 409 });
+  if (!result.schedule) return Response.json({ message: "일정 수정에 실패했습니다.", conflict: result.conflict }, { status: 500 });
+  const message = result.conflict.ownScheduleConflict
+    ? result.conflict.anonymousConflictCount > 0
+      ? "일정을 수정했습니다. 내 일정 및 그룹 일정과 겹칠 가능성이 높습니다."
+      : "일정을 수정했습니다. 다른 내 일정과 시간이 겹칩니다."
+    : result.conflict.hasConflict
+      ? "일정을 수정했습니다. 그룹 일정과의 충돌 가능성이 있습니다."
+      : "일정을 수정했습니다.";
   return Response.json({
     schedule: result.schedule,
     conflict: result.conflict,
-    message: result.conflict.hasConflict ? "일정을 수정했습니다. 그룹 일정과의 충돌 가능성이 있습니다." : "일정을 수정했습니다.",
+    message,
   });
 }
 
