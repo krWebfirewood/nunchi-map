@@ -59,6 +59,9 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [groupSchedules, setGroupSchedules] = useState<MapSchedule[]>([]);
   const [hasAnySchedule, setHasAnySchedule] = useState(false);
   const [schedulesLoadedFor, setSchedulesLoadedFor] = useState("");
+  const [schedulesLoading, setSchedulesLoading] = useState(false);
+  const [scheduleLoadError, setScheduleLoadError] = useState(false);
+  const scheduleRequestRef = useRef(0);
   const [calendarRefreshKey, setCalendarRefreshKey] = useState(0);
   const [startTime, setStartTime] = useState("14:00");
   const [endTime, setEndTime] = useState("18:00");
@@ -93,12 +96,23 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
 
   const loadSchedules = useCallback(async () => {
     if (!userId) return;
-    const response = await fetch(`/api/schedules?date=${selectedDate}`);
-    const data = await response.json();
-    setSchedules(response.ok ? data.schedules : []);
-    setGroupSchedules(response.ok ? data.groupSchedules : []);
-    setHasAnySchedule(response.ok && data.totalScheduleCount > 0);
-    if (response.ok) setCalendarRefreshKey((value) => value + 1);
+    const requestId = ++scheduleRequestRef.current;
+    setSchedulesLoading(true);
+    setScheduleLoadError(false);
+    try {
+      const response = await fetch(`/api/schedules?date=${selectedDate}`);
+      const data = await response.json();
+      if (scheduleRequestRef.current !== requestId) return;
+      setSchedules(response.ok ? data.schedules : []);
+      setGroupSchedules(response.ok ? data.groupSchedules : []);
+      setHasAnySchedule(response.ok && data.totalScheduleCount > 0);
+      setScheduleLoadError(!response.ok);
+      if (response.ok) setCalendarRefreshKey((value) => value + 1);
+    } catch {
+      if (scheduleRequestRef.current === requestId) setScheduleLoadError(true);
+    } finally {
+      if (scheduleRequestRef.current === requestId) setSchedulesLoading(false);
+    }
   }, [selectedDate, userId]);
 
   useEffect(() => {
@@ -107,6 +121,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
       fetch("/api/session").then((response) => response.json()) as Promise<{ user: User | null }>,
     ]).then(([userData, sessionData]) => {
       setUsers(userData.users);
+      if (sessionData.user) setSchedulesLoading(true);
       setUserId(sessionData.user?.id ?? "");
       setSessionNickname(sessionData.user?.nickname ?? "");
     }).finally(() => setSessionReady(true));
@@ -132,10 +147,28 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   useEffect(() => {
     if (!userId) return;
     const controller = new AbortController();
+    const requestId = ++scheduleRequestRef.current;
     void fetch(`/api/schedules?date=${selectedDate}`, { signal: controller.signal })
       .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
-      .then(({ ok, data }) => { setSchedules(ok ? data.schedules : []); setGroupSchedules(ok ? data.groupSchedules : []); setHasAnySchedule(ok && data.totalScheduleCount > 0); setSchedulesLoadedFor(userId); })
-      .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === "AbortError")) { setSchedules([]); setGroupSchedules([]); setHasAnySchedule(false); setSchedulesLoadedFor(userId); } });
+      .then(({ ok, data }) => {
+        if (controller.signal.aborted || scheduleRequestRef.current !== requestId) return;
+        setSchedules(ok ? data.schedules : []);
+        setGroupSchedules(ok ? data.groupSchedules : []);
+        setHasAnySchedule(ok && data.totalScheduleCount > 0);
+        setSchedulesLoadedFor(userId);
+        setScheduleLoadError(!ok);
+        setSchedulesLoading(false);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        if (scheduleRequestRef.current !== requestId) return;
+        setSchedules([]);
+        setGroupSchedules([]);
+        setHasAnySchedule(false);
+        setSchedulesLoadedFor(userId);
+        setScheduleLoadError(true);
+        setSchedulesLoading(false);
+      });
     return () => controller.abort();
   }, [selectedDate, userId]);
 
@@ -179,6 +212,15 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     setDraftingSchedule(false);
     setAnalyzing(false);
     setMessage("");
+  }
+
+  function selectDate(date: string) {
+    if (date === selectedDate) return;
+    setEditingScheduleId(null);
+    setSchedulesLoading(true);
+    setScheduleLoadError(false);
+    setSelectedDate(date);
+    resetCheckResult();
   }
 
   function requestBody() {
@@ -426,6 +468,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     const response = await fetch("/api/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: selectedUserId }) });
     const data = await response.json();
     if (!response.ok) { setMessage(data.message ?? "로그인에 실패했습니다."); return; }
+    setSchedulesLoading(true);
+    setScheduleLoadError(false);
     setUserId(data.user.id);
     setSessionNickname(data.user.nickname);
   }
@@ -442,6 +486,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     const data = await response.json().catch(() => null) as { message?: string; user?: User } | null;
     setAuthBusy(false);
     if (!response.ok || !data?.user) { setAuthMessage(data?.message ?? "로그인 요청에 실패했습니다."); return; }
+    setSchedulesLoading(true);
+    setScheduleLoadError(false);
     setUserId(data.user.id);
     setSessionNickname(data.user.nickname);
     setAuthPassword("");
@@ -450,7 +496,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   async function logout() {
     await stopLocationSharing();
     await fetch("/api/session", { method: "DELETE" });
-    setUserId(""); setSessionNickname(""); setSchedules([]); setGroupSchedules([]); setGroups([]); setHasAnySchedule(false); setGroupsLoadedFor(""); setSchedulesLoadedFor(""); resetCheckResult();
+    setUserId(""); setSessionNickname(""); setSchedules([]); setGroupSchedules([]); setGroups([]); setHasAnySchedule(false); setGroupsLoadedFor(""); setSchedulesLoadedFor(""); setSchedulesLoading(false); setScheduleLoadError(false); resetCheckResult();
   }
 
   async function publishLiveLocation(groupId: string, position: GeolocationPosition) {
@@ -629,7 +675,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
       </section>
       {onboardingReady && (groups.length === 0 || !hasAnySchedule) && <GettingStarted hasGroup={groups.length > 0} hasSchedule={hasAnySchedule} onGroupSetup={focusGroupSetup} onScheduleSetup={focusScheduleSetup} />}
       <section className="workspace" id="map-area" aria-label="일정 확인 작업 영역">
-        <MonthCalendar key={`${userId}-${selectedDate.slice(0, 7)}`} selectedDate={selectedDate} scheduleCount={schedules.length} refreshKey={calendarRefreshKey} onSelectDate={(date) => { setEditingScheduleId(null); setSelectedDate(date); resetCheckResult(); }} />
+        <MonthCalendar key={`${userId}-${selectedDate.slice(0, 7)}`} selectedDate={selectedDate} scheduleCount={schedules.length} isScheduleLoading={schedulesLoading} refreshKey={calendarRefreshKey} onSelectDate={selectDate} />
         <div className="map-stack">
           <MapView
             locationName={locationName}
@@ -639,6 +685,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
             conflictState={conflictState}
             schedules={mapSchedules}
             selectedDate={selectedDate}
+            dataState={schedulesLoading ? "loading" : scheduleLoadError ? "error" : "ready"}
             liveLocations={visibleLocationGroupId ? liveLocations : []}
             liveLocationGroupId={visibleLocationGroupId}
             liveLocationGroupName={groups.find((group) => group.id === visibleLocationGroupId)?.name ?? null}
@@ -656,7 +703,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         <div className={`form-card ${editingScheduleId ? "is-editing" : ""}`} ref={formCardRef}>
           <p className="eyebrow">{editingScheduleId ? "EDIT SCHEDULE" : "DIRECT INPUT"}</p><h2 id="schedule-title">{editingScheduleId ? "일정 수정" : "직접 일정 등록"}</h2>
           <div className="schedule-form">
-            <label>날짜<input type="date" value={selectedDate} onChange={(event) => { setSelectedDate(event.target.value); resetCheckResult(); }} /></label>
+            <label>날짜<input type="date" value={selectedDate} onChange={(event) => selectDate(event.target.value)} /></label>
             <label>시작 시간<input type="time" value={startTime} onChange={(event) => { setStartTime(event.target.value); resetCheckResult(); }} /></label>
             <label>종료 시간<input type="time" value={endTime} onChange={(event) => { setEndTime(event.target.value); resetCheckResult(); }} /></label>
             <LocationSearch selectedName={locationName} onSelect={selectLocation} />
@@ -670,7 +717,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         </div>
         <aside className="schedule-list">
           <div><p className="eyebrow">MY SCHEDULES</p><h2>{currentUser?.nickname ?? "사용자"}님의 일정</h2><p>{selectedDate}</p></div>
-          {schedules.length === 0 ? <div className="empty-state empty-action"><strong>이 날짜에는 아직 일정이 없어요.</strong><span>직접 입력하거나 문장으로 일정을 추가해 보세요.</span><button type="button" onClick={focusScheduleSetup}>첫 일정 등록하기</button></div> : <ul>{schedules.map((schedule) => <li key={schedule.id} className={`${schedule.riskLevel !== "low" ? "has-risk" : ""} ${editingScheduleId === schedule.id ? "is-editing" : ""}`}><div className="schedule-summary"><strong>{formatMinutes(schedule.startMinutes)}–{formatMinutes(schedule.endMinutes)}</strong><span>{schedule.locationName} · 반경 {(schedule.radiusMeters / 1000).toFixed(1)}km</span><div className="schedule-badges"><small className={`sharing-state ${schedule.shareWithGroups ? "shared" : "private"}`}>{schedule.shareWithGroups ? "그룹 공유 중" : "나만 보기"}</small>{schedule.riskLevel !== "low" && <em>충돌 가능성 {schedule.riskLevel === "high" ? "높음" : "보통"}</em>}</div></div><div className="schedule-actions"><button className="edit-button" type="button" disabled={sharingScheduleId !== null || deletingScheduleId !== null} onClick={() => beginEdit(schedule)}>{editingScheduleId === schedule.id ? "수정 중" : "수정"}</button><button className="sharing-button" type="button" disabled={sharingScheduleId !== null || deletingScheduleId !== null} onClick={() => void toggleScheduleSharing(schedule)}>{sharingScheduleId === schedule.id ? "변경 중…" : schedule.shareWithGroups ? "나만 보기" : "그룹 공유"}</button><button className="delete-button" type="button" disabled={deletingScheduleId !== null || sharingScheduleId !== null} onClick={() => void deleteSchedule(schedule.id)} aria-label={`${schedule.locationName} 일정 삭제`}>{deletingScheduleId === schedule.id ? "삭제 중…" : "삭제"}</button></div></li>)}</ul>}
+          {schedulesLoading ? <div className="schedule-loading" role="status" aria-live="polite"><i aria-hidden="true" /><strong>선택한 날짜의 일정을 불러오는 중…</strong><span>지도와 일정 목록을 함께 업데이트하고 있어요.</span></div> : scheduleLoadError ? <div className="empty-state empty-action"><strong>일정을 불러오지 못했어요.</strong><span>잠시 후 날짜를 다시 선택해 주세요.</span></div> : schedules.length === 0 ? <div className="empty-state empty-action"><strong>이 날짜에는 아직 일정이 없어요.</strong><span>직접 입력하거나 문장으로 일정을 추가해 보세요.</span><button type="button" onClick={focusScheduleSetup}>첫 일정 등록하기</button></div> : <ul>{schedules.map((schedule) => <li key={schedule.id} className={`${schedule.riskLevel !== "low" ? "has-risk" : ""} ${editingScheduleId === schedule.id ? "is-editing" : ""}`}><div className="schedule-summary"><strong>{formatMinutes(schedule.startMinutes)}–{formatMinutes(schedule.endMinutes)}</strong><span>{schedule.locationName} · 반경 {(schedule.radiusMeters / 1000).toFixed(1)}km</span><div className="schedule-badges"><small className={`sharing-state ${schedule.shareWithGroups ? "shared" : "private"}`}>{schedule.shareWithGroups ? "그룹 공유 중" : "나만 보기"}</small>{schedule.riskLevel !== "low" && <em>충돌 가능성 {schedule.riskLevel === "high" ? "높음" : "보통"}</em>}</div></div><div className="schedule-actions"><button className="edit-button" type="button" disabled={sharingScheduleId !== null || deletingScheduleId !== null} onClick={() => beginEdit(schedule)}>{editingScheduleId === schedule.id ? "수정 중" : "수정"}</button><button className="sharing-button" type="button" disabled={sharingScheduleId !== null || deletingScheduleId !== null} onClick={() => void toggleScheduleSharing(schedule)}>{sharingScheduleId === schedule.id ? "변경 중…" : schedule.shareWithGroups ? "나만 보기" : "그룹 공유"}</button><button className="delete-button" type="button" disabled={deletingScheduleId !== null || sharingScheduleId !== null} onClick={() => void deleteSchedule(schedule.id)} aria-label={`${schedule.locationName} 일정 삭제`}>{deletingScheduleId === schedule.id ? "삭제 중…" : "삭제"}</button></div></li>)}</ul>}
         </aside>
       </section>
       <section className="group-section" id="groups" aria-labelledby="group-title">

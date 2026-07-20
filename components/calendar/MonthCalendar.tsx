@@ -10,6 +10,7 @@ const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 interface MonthCalendarProps {
   selectedDate: string;
   scheduleCount: number;
+  isScheduleLoading: boolean;
   refreshKey: number;
   onSelectDate: (date: string) => void;
 }
@@ -30,7 +31,7 @@ function summaryDescription(summary: CalendarDaySummary): string {
   return `내 일정 ${summary.scheduleCount}개, ${visibility}, ${STATUS_LABEL[summary.riskStatus]}`;
 }
 
-export function MonthCalendar({ selectedDate, scheduleCount, refreshKey, onSelectDate }: MonthCalendarProps) {
+export function MonthCalendar({ selectedDate, scheduleCount, isScheduleLoading, refreshKey, onSelectDate }: MonthCalendarProps) {
   const today = useMemo(() => new Date(), []);
   const selected = parseISO(`${selectedDate}T12:00:00`);
   const [visibleMonth, setVisibleMonth] = useState(startOfMonth(selected));
@@ -68,13 +69,13 @@ export function MonthCalendar({ selectedDate, scheduleCount, refreshKey, onSelec
           const summary = monthSummary[dateKey];
           const description = summary ? summaryDescription(summary) : "등록된 내 일정 없음";
           const label = `${format(day, "yyyy년 M월 d일", { locale: ko })}, ${description}`;
-          return <button type="button" key={day.toISOString()} className={`${isSelected ? "selected" : ""} ${isSameMonth(day, visibleMonth) ? "" : "muted"}`} onClick={() => onSelectDate(dateKey)} aria-pressed={isSelected} aria-label={label} title={description}><span className="calendar-day-number">{format(day, "d")}</span>{summary && <span className={`calendar-status ${summary.riskStatus}`} aria-hidden="true"><i />{summary.scheduleCount}</span>}{isSameDay(day, today) && <small className="calendar-today">오늘</small>}</button>;
+          return <button type="button" key={day.toISOString()} className={`${isSelected ? "selected" : ""} ${isSelected && isScheduleLoading ? "is-loading" : ""} ${isSameMonth(day, visibleMonth) ? "" : "muted"}`} onClick={() => onSelectDate(dateKey)} aria-pressed={isSelected} aria-busy={isSelected && isScheduleLoading} aria-label={label} title={description}><span className="calendar-day-number">{format(day, "d")}</span>{summary && <span className={`calendar-status ${summary.riskStatus}`} aria-hidden="true"><i />{summary.scheduleCount}</span>}{isSameDay(day, today) && <small className="calendar-today">오늘</small>}</button>;
         })}
       </div>
       <div className="calendar-legend" aria-label="일정 상태 범례">
         {(["safe", "medium", "high", "private"] as const).map((status) => <span key={status}><i className={status} />{STATUS_LABEL[status]}</span>)}
       </div>
-      <div className="selected-date"><span>선택한 날짜</span><strong>{format(selected, "M월 d일 EEEE", { locale: ko })}</strong><em>등록된 내 일정 {scheduleCount}개</em></div>
+      <div className="selected-date"><span>선택한 날짜</span><strong>{format(selected, "M월 d일 EEEE", { locale: ko })}</strong><em className={isScheduleLoading ? "loading" : ""}>{isScheduleLoading ? "일정 불러오는 중…" : `등록된 내 일정 ${scheduleCount}개`}</em></div>
     </article>
   );
 }

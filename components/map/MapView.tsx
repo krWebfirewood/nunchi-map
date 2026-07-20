@@ -34,6 +34,7 @@ interface MapViewProps {
   conflictState: "unchecked" | "safe" | "conflict";
   schedules: MapSchedule[];
   selectedDate: string;
+  dataState: "loading" | "error" | "ready";
   liveLocations: LiveMapLocation[];
   liveLocationGroupId: string | null;
   liveLocationGroupName: string | null;
@@ -63,6 +64,7 @@ export function MapView({
   conflictState,
   schedules,
   selectedDate,
+  dataState,
   liveLocations,
   liveLocationGroupId,
   liveLocationGroupName,
@@ -288,10 +290,17 @@ export function MapView({
       </div>
     </section>
   );
+  const [, selectedMonth, selectedDay] = selectedDate.split("-").map(Number);
+  const dataFeedback = dataState !== "ready" && (
+    <div className={`map-data-state ${dataState}`} role={dataState === "error" ? "alert" : "status"} aria-live="polite">
+      <i aria-hidden="true" />
+      <div><strong>{selectedMonth}월 {selectedDay}일 일정</strong><span>{dataState === "loading" ? "지도와 일정 정보를 불러오는 중…" : "일정을 불러오지 못했어요. 날짜를 다시 선택해 주세요."}</span></div>
+    </div>
+  );
 
   if (!appKey || loadError) {
     const circleSize = Math.max(120, Math.min(270, 110 + radiusMeters / 12));
-    return <div className={`map-panel ${showTimeExplorer ? "has-time-explorer" : ""}`}>
+    return <div className={`map-panel ${showTimeExplorer ? "has-time-explorer" : ""} ${dataState !== "ready" ? "is-data-pending" : ""}`} aria-busy={dataState === "loading"}>
       <div className={`mock-map ${conflictState}`} aria-label={`${locationName} 지도 목업`}>
           <div className="mock-map-grid" aria-hidden="true" />
           <div className="mock-circle" style={{ width: circleSize, height: circleSize }} aria-hidden="true" />
@@ -303,10 +312,11 @@ export function MapView({
           <div className="map-radius-label">확인 반경 {(radiusMeters / 1000).toFixed(1)}km</div>
         </div>
         {timeExplorer}
+        {dataFeedback}
       </div>;
   }
 
-  return <div className={`map-panel ${showTimeExplorer ? "has-time-explorer" : ""}`}>
+  return <div className={`map-panel ${showTimeExplorer ? "has-time-explorer" : ""} ${dataState !== "ready" ? "is-data-pending" : ""}`} aria-busy={dataState === "loading"}>
       <div className="kakao-map-shell">
         <div ref={containerRef} className="kakao-map" aria-label={viewMode === "day" ? `선택한 날짜의 일정 ${schedules.length}개 지도` : `${locationName} Kakao 지도`} />
         {mapControls}
@@ -319,5 +329,6 @@ export function MapView({
         )}
       </div>
       {timeExplorer}
+      {dataFeedback}
     </div>;
 }

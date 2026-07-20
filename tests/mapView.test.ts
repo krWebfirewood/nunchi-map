@@ -10,6 +10,7 @@ const baseProps = {
   radiusMeters: 500,
   conflictState: "unchecked" as const,
   selectedDate: "2030-01-15",
+  dataState: "ready" as const,
   liveLocations: [],
   liveLocationGroupId: null,
   liveLocationGroupName: null,
@@ -43,6 +44,13 @@ describe("MapView 시간대 탐색 UI", () => {
     const html = renderToStaticMarkup(createElement(MapView, { ...baseProps, schedules: [] }));
     expect(html).not.toContain("지도 시간대 탐색");
     expect(html).not.toContain('type="range"');
+  });
+
+  it("날짜 일정 조회 중에는 지도 위에 선택 날짜와 로딩 상태를 표시한다", () => {
+    const html = renderToStaticMarkup(createElement(MapView, { ...baseProps, schedules, dataState: "loading" }));
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain("1월 15일 일정");
+    expect(html).toContain("지도와 일정 정보를 불러오는 중…");
   });
 
   it("선택한 그룹의 활성 위치 인원을 지도에 표시한다", () => {
