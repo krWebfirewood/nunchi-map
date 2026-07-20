@@ -16,6 +16,16 @@ export interface MapSchedule {
   shareWithGroups?: boolean;
 }
 
+export interface LiveMapLocation {
+  userId: string;
+  nickname: string;
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number;
+  updatedAt: string;
+  isMe: boolean;
+}
+
 interface MapViewProps {
   locationName: string;
   latitude: number;
@@ -24,6 +34,8 @@ interface MapViewProps {
   conflictState: "unchecked" | "safe" | "conflict";
   schedules: MapSchedule[];
   selectedDate: string;
+  liveLocations: LiveMapLocation[];
+  liveLocationGroupName: string | null;
 }
 
 function formatMinutes(value: number): string {
@@ -46,6 +58,8 @@ export function MapView({
   conflictState,
   schedules,
   selectedDate,
+  liveLocations,
+  liveLocationGroupName,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<KakaoMap | null>(null);
@@ -139,10 +153,43 @@ export function MapView({
           fillOpacity: conflictState === "unchecked" ? 0.13 : 0.28,
         }));
       }
+
+      if (liveLocations.length > 0) {
+        const liveBounds = new maps.LatLngBounds();
+        if (viewMode === "day" && schedules.length > 0) {
+          schedules.forEach((schedule) => liveBounds.extend(new maps.LatLng(schedule.latitude, schedule.longitude)));
+        } else {
+          liveBounds.extend(inputCenter);
+        }
+        for (const location of liveLocations) {
+          const position = new maps.LatLng(location.latitude, location.longitude);
+          liveBounds.extend(position);
+          overlaysRef.current.push(new maps.Circle({
+            map,
+            center: position,
+            radius: Math.max(10, Math.min(200, location.accuracyMeters)),
+            strokeWeight: 2,
+            strokeColor: location.isMe ? "#176247" : "#2f5d9b",
+            strokeOpacity: 0.85,
+            fillColor: location.isMe ? "#74b597" : "#80a9df",
+            fillOpacity: 0.22,
+          }));
+          const label = document.createElement("div");
+          label.className = `live-location-label ${location.isMe ? "me" : "member"}`;
+          const dot = document.createElement("i");
+          const name = document.createElement("strong");
+          name.textContent = location.isMe ? `${location.nickname} · 나` : location.nickname;
+          const accuracy = document.createElement("span");
+          accuracy.textContent = `정확도 약 ${Math.max(1, Math.round(location.accuracyMeters))}m`;
+          label.append(dot, name, accuracy);
+          overlaysRef.current.push(new maps.CustomOverlay({ map, position, content: label, yAnchor: 1.35, zIndex: 10 }));
+        }
+        map.setBounds(liveBounds, 80, 54, 90, 54);
+      }
       setLoadError(false);
     }).catch(() => setLoadError(true));
     return () => { cancelled = true; };
-  }, [appKey, conflictState, explorerMinutes, groupedSchedules, latitude, longitude, radiusMeters, schedules, timeMode, viewMode]);
+  }, [appKey, conflictState, explorerMinutes, groupedSchedules, latitude, liveLocations, longitude, radiusMeters, schedules, timeMode, viewMode]);
 
   const mapControls = schedules.length > 0 && (
     <div className="map-view-controls" role="group" aria-label="지도 표시 방식">
@@ -190,6 +237,7 @@ export function MapView({
           <div className="map-place-label"><strong>{locationName}</strong><span>{latitude.toFixed(4)}, {longitude.toFixed(4)}</span></div>
           {mapControls}
           <div className="map-mode-badge">{loadError ? "Kakao 지도 연결 실패 · 목업 모드" : "지도 목업 모드"}</div>
+          {liveLocationGroupName && <div className="live-location-summary">{liveLocationGroupName} · 현재 위치 {liveLocations.length}명</div>}
           <div className="map-radius-label">확인 반경 {(radiusMeters / 1000).toFixed(1)}km</div>
         </div>
         {timeExplorer}
@@ -201,6 +249,7 @@ export function MapView({
         <div ref={containerRef} className="kakao-map" aria-label={viewMode === "day" ? `선택한 날짜의 일정 ${schedules.length}개 지도` : `${locationName} Kakao 지도`} />
         {mapControls}
         <div className="map-mode-badge">Kakao 지도 · 비공개 그룹 공유</div>
+        {liveLocationGroupName && <div className="live-location-summary">{liveLocationGroupName} · 현재 위치 {liveLocations.length}명</div>}
         {viewMode === "day" ? (
           <div className="map-zone-legend"><span><i className="own" />내 일정 {schedules.filter((schedule) => schedule.source === "own").length}</span><span><i className="group" />그룹 일정 {schedules.filter((schedule) => schedule.source === "group").length}</span><small>{timeMode === "all" ? "진한 원: 하루 전체" : `${formatMinutes(explorerMinutes)} 활성 영역 ${activeScheduleCount}개`}</small></div>
         ) : (

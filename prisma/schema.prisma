@@ -8,25 +8,27 @@ datasource db {
 }
 
 model User {
-  id           String        @id @default(cuid())
-  nickname     String
-  loginId      String?       @unique
-  passwordHash String?
-  createdAt    DateTime      @default(now())
-  schedules    Schedule[]
-  memberships  GroupMember[]
-  ownedGroups  Group[]       @relation("GroupOwner")
-  sessions     Session[]
+  id            String         @id @default(cuid())
+  nickname      String
+  loginId       String?        @unique
+  passwordHash  String?
+  createdAt     DateTime       @default(now())
+  schedules     Schedule[]
+  memberships   GroupMember[]
+  ownedGroups   Group[]        @relation("GroupOwner")
+  sessions      Session[]
+  liveLocations LiveLocation[]
 }
 
 model Group {
-  id         String        @id @default(cuid())
-  name       String
-  inviteCode String        @unique
-  ownerId    String?
-  createdAt  DateTime      @default(now())
-  owner      User?         @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  members    GroupMember[]
+  id            String         @id @default(cuid())
+  name          String
+  inviteCode    String         @unique
+  ownerId       String?
+  createdAt     DateTime       @default(now())
+  owner         User?          @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  members       GroupMember[]
+  liveLocations LiveLocation[]
 
   @@index([ownerId])
 }
@@ -70,4 +72,20 @@ model Schedule {
 
   @@index([date])
   @@index([userId])
+}
+
+model LiveLocation {
+  id             String   @id @default(cuid())
+  userId         String
+  groupId        String
+  latitude       Float
+  longitude      Float
+  accuracyMeters Int
+  updatedAt      DateTime @updatedAt
+  expiresAt      DateTime
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group          Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupId])
+  @@index([groupId, expiresAt])
 }

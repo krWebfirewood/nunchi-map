@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { MonthCalendar } from "@/components/calendar/MonthCalendar";
 import { LocationSearch, type SelectedLocation } from "@/components/map/LocationSearch";
-import { MapView, type MapSchedule } from "@/components/map/MapView";
+import { MapView, type LiveMapLocation, type MapSchedule } from "@/components/map/MapView";
 import { GettingStarted } from "@/components/onboarding/GettingStarted";
 import { DEMO_LOCATIONS } from "@/lib/locations";
 import { searchKakaoPlaces } from "@/lib/kakao/maps";
@@ -45,6 +45,15 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [groupBusy, setGroupBusy] = useState(false);
   const [groupActionId, setGroupActionId] = useState<string | null>(null);
   const [copiedGroupId, setCopiedGroupId] = useState<string | null>(null);
+  const [visibleLocationGroupId, setVisibleLocationGroupId] = useState<string | null>(null);
+  const [sharingLocationGroupId, setSharingLocationGroupId] = useState<string | null>(null);
+  const [liveLocations, setLiveLocations] = useState<LiveMapLocation[]>([]);
+  const [locationShareState, setLocationShareState] = useState<"idle" | "starting" | "active" | "error">("idle");
+  const [locationShareMessage, setLocationShareMessage] = useState("");
+  const locationWatchRef = useRef<number | null>(null);
+  const locationHeartbeatRef = useRef<number | null>(null);
+  const latestPositionRef = useRef<GeolocationPosition | null>(null);
+  const sharingLocationGroupRef = useRef<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [groupSchedules, setGroupSchedules] = useState<MapSchedule[]>([]);
@@ -129,6 +138,36 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
       .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === "AbortError")) { setSchedules([]); setGroupSchedules([]); setHasAnySchedule(false); setSchedulesLoadedFor(userId); } });
     return () => controller.abort();
   }, [selectedDate, userId]);
+
+  const loadLiveLocations = useCallback(async (groupId: string) => {
+    const response = await fetch(`/api/live-locations?groupId=${encodeURIComponent(groupId)}`);
+    const data = await response.json().catch(() => null) as { locations?: LiveMapLocation[] } | null;
+    if (response.ok) setLiveLocations(data?.locations ?? []);
+  }, []);
+
+  useEffect(() => {
+    if (!userId || !visibleLocationGroupId) return;
+    const initialId = window.setTimeout(() => void loadLiveLocations(visibleLocationGroupId), 0);
+    const intervalId = window.setInterval(() => void loadLiveLocations(visibleLocationGroupId), 5_000);
+    return () => { window.clearTimeout(initialId); window.clearInterval(intervalId); };
+  }, [loadLiveLocations, userId, visibleLocationGroupId]);
+
+  useEffect(() => {
+    const stopOnExit = () => {
+      if (locationWatchRef.current !== null) navigator.geolocation?.clearWatch(locationWatchRef.current);
+      if (locationHeartbeatRef.current !== null) window.clearInterval(locationHeartbeatRef.current);
+      const groupId = sharingLocationGroupRef.current;
+      sharingLocationGroupRef.current = null;
+      if (groupId) void fetch("/api/live-locations", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupId }),
+        keepalive: true,
+      });
+    };
+    window.addEventListener("pagehide", stopOnExit);
+    return () => { window.removeEventListener("pagehide", stopOnExit); stopOnExit(); };
+  }, []);
 
   function resetCheckResult() {
     recommendationRequestRef.current?.abort();
@@ -409,8 +448,90 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   }
 
   async function logout() {
+    await stopLocationSharing();
     await fetch("/api/session", { method: "DELETE" });
     setUserId(""); setSessionNickname(""); setSchedules([]); setGroupSchedules([]); setGroups([]); setHasAnySchedule(false); setGroupsLoadedFor(""); setSchedulesLoadedFor(""); resetCheckResult();
+  }
+
+  async function publishLiveLocation(groupId: string, position: GeolocationPosition) {
+    latestPositionRef.current = position;
+    const response = await fetch("/api/live-locations", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        groupId,
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracyMeters: position.coords.accuracy,
+      }),
+    });
+    if (!response.ok) throw new Error("현재 위치를 그룹에 공유하지 못했습니다.");
+    setSharingLocationGroupId(groupId);
+    setLocationShareState("active");
+    setLocationShareMessage("페이지를 열어 둔 동안만 현재 위치가 공유됩니다.");
+    void loadLiveLocations(groupId);
+  }
+
+  async function startLocationSharing(group: Group) {
+    if (!("geolocation" in navigator)) {
+      setLocationShareState("error");
+      setLocationShareMessage("이 브라우저에서는 현재 위치를 사용할 수 없습니다.");
+      return;
+    }
+    if (sharingLocationGroupRef.current) await stopLocationSharing();
+    setVisibleLocationGroupId(group.id);
+    setSharingLocationGroupId(group.id);
+    setLocationShareState("starting");
+    setLocationShareMessage("위치 권한을 확인하고 있어요…");
+    sharingLocationGroupRef.current = group.id;
+
+    locationWatchRef.current = navigator.geolocation.watchPosition(
+      (position) => {
+        if (sharingLocationGroupRef.current !== group.id) return;
+        void publishLiveLocation(group.id, position).catch(() => {
+          setLocationShareState("error");
+          setLocationShareMessage("현재 위치 공유에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+        });
+      },
+      (error) => {
+        if (locationWatchRef.current !== null) navigator.geolocation.clearWatch(locationWatchRef.current);
+        if (locationHeartbeatRef.current !== null) window.clearInterval(locationHeartbeatRef.current);
+        locationWatchRef.current = null;
+        locationHeartbeatRef.current = null;
+        sharingLocationGroupRef.current = null;
+        setSharingLocationGroupId(null);
+        setLocationShareState("error");
+        setLocationShareMessage(error.code === error.PERMISSION_DENIED ? "위치 권한이 필요합니다. 브라우저 설정에서 허용해 주세요." : "현재 위치를 확인하지 못했습니다.");
+      },
+      { enableHighAccuracy: true, maximumAge: 5_000, timeout: 15_000 },
+    );
+    locationHeartbeatRef.current = window.setInterval(() => {
+      const position = latestPositionRef.current;
+      if (position && sharingLocationGroupRef.current === group.id) {
+        void publishLiveLocation(group.id, position).catch(() => setLocationShareMessage("위치 갱신이 잠시 지연되고 있어요."));
+      }
+    }, 45_000);
+  }
+
+  async function stopLocationSharing() {
+    const groupId = sharingLocationGroupRef.current;
+    if (locationWatchRef.current !== null) navigator.geolocation?.clearWatch(locationWatchRef.current);
+    if (locationHeartbeatRef.current !== null) window.clearInterval(locationHeartbeatRef.current);
+    locationWatchRef.current = null;
+    locationHeartbeatRef.current = null;
+    latestPositionRef.current = null;
+    sharingLocationGroupRef.current = null;
+    setSharingLocationGroupId(null);
+    setLocationShareState("idle");
+    setLocationShareMessage(groupId ? "현재 위치 공유를 중지했습니다." : "");
+    if (groupId) {
+      await fetch("/api/live-locations", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupId }),
+      }).catch(() => undefined);
+      if (visibleLocationGroupId === groupId) void loadLiveLocations(groupId);
+    }
   }
 
   function focusScheduleSetup() {
@@ -467,6 +588,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
       ? `‘${group.name}’ 그룹을 삭제할까요?\n그룹만 삭제되며 구성원 각자의 일정은 유지됩니다.`
       : `‘${group.name}’ 그룹에서 탈퇴할까요?\n이 그룹의 공유 일정은 더 이상 지도와 충돌 계산에 나타나지 않습니다.`);
     if (!confirmed) return;
+    if (sharingLocationGroupId === group.id) await stopLocationSharing();
     setGroupActionId(group.id);
     setGroupMessage("");
     try {
@@ -476,6 +598,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
       if (!response.ok) { setGroupMessage(data?.message ?? "그룹 변경에 실패했습니다."); return; }
       resetCheckResult();
       setGroupMessage(data?.message ?? (isOwner ? "그룹을 삭제했습니다." : "그룹에서 탈퇴했습니다."));
+      if (visibleLocationGroupId === group.id) { setVisibleLocationGroupId(null); setLiveLocations([]); }
       await Promise.all([loadGroups(), loadSchedules()]);
     } catch {
       setGroupMessage("그룹 변경 요청에 실패했습니다.");
@@ -516,6 +639,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
             conflictState={conflictState}
             schedules={mapSchedules}
             selectedDate={selectedDate}
+            liveLocations={visibleLocationGroupId ? liveLocations : []}
+            liveLocationGroupName={groups.find((group) => group.id === visibleLocationGroupId)?.name ?? null}
           />
           <div className={`result-panel ${conflict?.hasConflict ? "has-conflict" : ""}`}>
             <p className="eyebrow">SCHEDULE CHECK</p>
@@ -555,9 +680,11 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
           <div className="group-form"><label>초대 코드<input value={inviteCode} onChange={(event) => setInviteCode(event.target.value.toUpperCase())} placeholder="예: NUNCHI" /></label><button type="button" disabled={groupBusy} onClick={() => void joinGroup()}>그룹 참여</button></div>
           {groupMessage && <p className="form-message" role="status">{groupMessage}</p>}
         </div>
-        <div className="group-list">{groups.length === 0 ? <div className="empty-state empty-action"><strong>아직 연결된 그룹이 없어요.</strong><span>새 그룹을 만들거나 받은 초대 코드로 참여하세요.</span><button type="button" onClick={focusGroupSetup}>그룹 만들기</button></div> : groups.map((group) => <article key={group.id} className={group.role === "owner" ? "is-owner" : ""}>
+        {locationShareMessage && <p className={`location-share-message ${locationShareState}`} role="status">{locationShareMessage}</p>}
+        <div className="group-list">{groups.length === 0 ? <div className="empty-state empty-action"><strong>아직 연결된 그룹이 없어요.</strong><span>새 그룹을 만들거나 받은 초대 코드로 참여하세요.</span><button type="button" onClick={focusGroupSetup}>그룹 만들기</button></div> : groups.map((group) => <article key={group.id} className={`${group.role === "owner" ? "is-owner" : ""} ${visibleLocationGroupId === group.id ? "is-location-visible" : ""}`}>
           <div className="group-card-heading"><div><strong>{group.name}</strong><span>익명 구성원 {group.memberCount}명</span></div><em>{group.role === "owner" ? "내가 만든 그룹" : "참여한 그룹"}</em></div>
           <div className="group-invite"><span>초대 코드</span><div><code>{group.inviteCode}</code><button type="button" disabled={groupActionId !== null} onClick={() => void copyInviteCode(group)} aria-label={`${group.name} 초대 코드 복사`}>{copiedGroupId === group.id ? "복사됨" : "복사"}</button></div></div>
+          <div className="live-location-actions"><button type="button" className={visibleLocationGroupId === group.id ? "active" : ""} onClick={() => setVisibleLocationGroupId(group.id)}>지도에서 보기</button>{sharingLocationGroupId === group.id ? <button type="button" className="stop-sharing" onClick={() => void stopLocationSharing()}>{locationShareState === "starting" ? "권한 확인 중…" : "위치 공유 중지"}</button> : <button type="button" className="start-sharing" onClick={() => void startLocationSharing(group)}>현재 위치 공유</button>}</div>
           <div className="group-card-actions"><small>{group.role === "owner" ? "생성자만 이 그룹을 삭제할 수 있습니다." : "탈퇴하면 이 그룹의 공유 일정이 보이지 않습니다."}</small><button type="button" className={group.role === "owner" ? "delete-group" : "leave-group"} disabled={groupActionId !== null || groupBusy} onClick={() => void runGroupAction(group)}>{groupActionId === group.id ? "처리 중…" : group.role === "owner" ? "그룹 삭제" : "그룹 탈퇴"}</button></div>
         </article>)}</div>
       </section>

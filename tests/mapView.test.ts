@@ -10,6 +10,8 @@ const baseProps = {
   radiusMeters: 500,
   conflictState: "unchecked" as const,
   selectedDate: "2030-01-15",
+  liveLocations: [],
+  liveLocationGroupName: null,
 };
 
 const schedules: MapSchedule[] = [{
@@ -36,5 +38,23 @@ describe("MapView 시간대 탐색 UI", () => {
     const html = renderToStaticMarkup(createElement(MapView, { ...baseProps, schedules: [] }));
     expect(html).not.toContain("지도 시간대 탐색");
     expect(html).not.toContain('type="range"');
+  });
+
+  it("선택한 그룹의 활성 위치 인원을 지도에 표시한다", () => {
+    const html = renderToStaticMarkup(createElement(MapView, {
+      ...baseProps,
+      schedules: [],
+      liveLocationGroupName: "주말 모임",
+      liveLocations: [{
+        userId: "user-1",
+        nickname: "지각대장",
+        latitude: 37.5,
+        longitude: 127,
+        accuracyMeters: 12,
+        updatedAt: "2030-01-15T10:00:00.000Z",
+        isMe: true,
+      }],
+    }));
+    expect(html).toContain("주말 모임 · 현재 위치 1명");
   });
 });
