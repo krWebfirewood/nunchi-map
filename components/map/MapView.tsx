@@ -35,6 +35,7 @@ interface MapViewProps {
   schedules: MapSchedule[];
   selectedDate: string;
   liveLocations: LiveMapLocation[];
+  liveLocationGroupId: string | null;
   liveLocationGroupName: string | null;
 }
 
@@ -50,6 +51,10 @@ function isExplorerScheduleActive(schedule: MapSchedule, mode: "all" | "time", m
   return mode === "all" || isScheduleActiveAtTime(schedule, minutes);
 }
 
+export function shouldFitLiveLocations(previousGroupId: string | null, currentGroupId: string | null, locationCount: number): boolean {
+  return currentGroupId !== null && previousGroupId !== currentGroupId && locationCount > 0;
+}
+
 export function MapView({
   locationName,
   latitude,
@@ -59,11 +64,16 @@ export function MapView({
   schedules,
   selectedDate,
   liveLocations,
+  liveLocationGroupId,
   liveLocationGroupName,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<KakaoMap | null>(null);
-  const overlaysRef = useRef<KakaoOverlay[]>([]);
+  const scheduleOverlaysRef = useRef<KakaoOverlay[]>([]);
+  const liveOverlaysRef = useRef<KakaoOverlay[]>([]);
+  const scheduleCameraKeyRef = useRef<string | null>(null);
+  const liveCameraGroupRef = useRef<string | null>(null);
+  const [mapReady, setMapReady] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [viewPreference, setViewPreference] = useState<{ date: string; mode: "day" | "input" }>({ date: selectedDate, mode: "day" });
   const [timePreference, setTimePreference] = useState<{ date: string; mode: "all" | "time"; minutes: number }>({ date: selectedDate, mode: "all", minutes: 720 });
@@ -91,8 +101,21 @@ export function MapView({
       const map = mapRef.current ?? new maps.Map(containerRef.current, { center: inputCenter, level: 5 });
       mapRef.current = map;
       map.relayout();
-      overlaysRef.current.forEach((overlay) => overlay.setMap(null));
-      overlaysRef.current = [];
+      setLoadError(false);
+      setMapReady(true);
+    }).catch(() => setLoadError(true));
+    return () => { cancelled = true; };
+  }, [appKey, latitude, longitude]);
+
+  useEffect(() => {
+    if (!appKey || !mapReady || !mapRef.current) return;
+    let cancelled = false;
+    void loadKakaoMaps(appKey).then((maps) => {
+      if (cancelled || !mapRef.current) return;
+      const map = mapRef.current;
+      const inputCenter = new maps.LatLng(latitude, longitude);
+      scheduleOverlaysRef.current.forEach((overlay) => overlay.setMap(null));
+      scheduleOverlaysRef.current = [];
 
       if (viewMode === "day" && schedules.length > 0) {
         const bounds = new maps.LatLngBounds();
@@ -101,7 +124,7 @@ export function MapView({
           const center = new maps.LatLng(schedule.latitude, schedule.longitude);
           const active = isExplorerScheduleActive(schedule, timeMode, explorerMinutes);
           const isGroupSchedule = schedule.source === "group";
-          overlaysRef.current.push(new maps.Circle({
+          scheduleOverlaysRef.current.push(new maps.Circle({
             map,
             center,
             radius: schedule.radiusMeters,
@@ -129,7 +152,7 @@ export function MapView({
           const times = document.createElement("span");
           times.textContent = group.map((schedule) => `${formatMinutes(schedule.startMinutes)}–${formatMinutes(schedule.endMinutes)}`).join(" · ");
           label.append(place, times);
-          overlaysRef.current.push(new maps.CustomOverlay({
+          scheduleOverlaysRef.current.push(new maps.CustomOverlay({
             map,
             position: new maps.LatLng(representative.latitude, representative.longitude),
             content: label,
@@ -137,12 +160,20 @@ export function MapView({
             zIndex: groupActive ? 4 : 2,
           }));
         }
-        map.setBounds(bounds, 66, 46, 46, 46);
+        const scheduleCameraKey = `day:${selectedDate}:${schedules.map((schedule) => `${schedule.id}:${schedule.latitude}:${schedule.longitude}:${schedule.radiusMeters}`).join("|")}`;
+        if (scheduleCameraKeyRef.current !== scheduleCameraKey) {
+          map.setBounds(bounds, 66, 46, 46, 46);
+          scheduleCameraKeyRef.current = scheduleCameraKey;
+        }
       } else {
-        map.setCenter(inputCenter);
-        overlaysRef.current.push(new maps.Marker({ map, position: inputCenter }));
+        const inputCameraKey = `input:${latitude}:${longitude}`;
+        if (scheduleCameraKeyRef.current !== inputCameraKey) {
+          map.setCenter(inputCenter);
+          scheduleCameraKeyRef.current = inputCameraKey;
+        }
+        scheduleOverlaysRef.current.push(new maps.Marker({ map, position: inputCenter }));
         const isConflict = conflictState === "conflict";
-        overlaysRef.current.push(new maps.Circle({
+        scheduleOverlaysRef.current.push(new maps.Circle({
           map,
           center: inputCenter,
           radius: radiusMeters,
@@ -154,17 +185,30 @@ export function MapView({
         }));
       }
 
+    });
+    return () => { cancelled = true; };
+  }, [appKey, conflictState, explorerMinutes, groupedSchedules, latitude, longitude, mapReady, radiusMeters, schedules, selectedDate, timeMode, viewMode]);
+
+  useEffect(() => {
+    if (!appKey || !mapReady || !mapRef.current) return;
+    let cancelled = false;
+    void loadKakaoMaps(appKey).then((maps) => {
+      if (cancelled || !mapRef.current) return;
+      const map = mapRef.current;
+      liveOverlaysRef.current.forEach((overlay) => overlay.setMap(null));
+      liveOverlaysRef.current = [];
+
+      if (!liveLocationGroupId) {
+        liveCameraGroupRef.current = null;
+        return;
+      }
+
       if (liveLocations.length > 0) {
         const liveBounds = new maps.LatLngBounds();
-        if (viewMode === "day" && schedules.length > 0) {
-          schedules.forEach((schedule) => liveBounds.extend(new maps.LatLng(schedule.latitude, schedule.longitude)));
-        } else {
-          liveBounds.extend(inputCenter);
-        }
         for (const location of liveLocations) {
           const position = new maps.LatLng(location.latitude, location.longitude);
           liveBounds.extend(position);
-          overlaysRef.current.push(new maps.Circle({
+          liveOverlaysRef.current.push(new maps.Circle({
             map,
             center: position,
             radius: Math.max(10, Math.min(200, location.accuracyMeters)),
@@ -182,14 +226,21 @@ export function MapView({
           const accuracy = document.createElement("span");
           accuracy.textContent = `정확도 약 ${Math.max(1, Math.round(location.accuracyMeters))}m`;
           label.append(dot, name, accuracy);
-          overlaysRef.current.push(new maps.CustomOverlay({ map, position, content: label, yAnchor: 1.35, zIndex: 10 }));
+          liveOverlaysRef.current.push(new maps.CustomOverlay({ map, position, content: label, yAnchor: 1.35, zIndex: 10 }));
         }
-        map.setBounds(liveBounds, 80, 54, 90, 54);
+        if (shouldFitLiveLocations(liveCameraGroupRef.current, liveLocationGroupId, liveLocations.length)) {
+          map.setBounds(liveBounds, 80, 54, 90, 54);
+          liveCameraGroupRef.current = liveLocationGroupId;
+        }
       }
-      setLoadError(false);
-    }).catch(() => setLoadError(true));
+    });
     return () => { cancelled = true; };
-  }, [appKey, conflictState, explorerMinutes, groupedSchedules, latitude, liveLocations, longitude, radiusMeters, schedules, timeMode, viewMode]);
+  }, [appKey, liveLocationGroupId, liveLocations, mapReady]);
+
+  useEffect(() => () => {
+    scheduleOverlaysRef.current.forEach((overlay) => overlay.setMap(null));
+    liveOverlaysRef.current.forEach((overlay) => overlay.setMap(null));
+  }, []);
 
   const mapControls = schedules.length > 0 && (
     <div className="map-view-controls" role="group" aria-label="지도 표시 방식">

@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { MapView, type MapSchedule } from "@/components/map/MapView";
+import { MapView, shouldFitLiveLocations, type MapSchedule } from "@/components/map/MapView";
 
 const baseProps = {
   locationName: "당산",
@@ -11,6 +11,7 @@ const baseProps = {
   conflictState: "unchecked" as const,
   selectedDate: "2030-01-15",
   liveLocations: [],
+  liveLocationGroupId: null,
   liveLocationGroupName: null,
 };
 
@@ -44,6 +45,7 @@ describe("MapView 시간대 탐색 UI", () => {
     const html = renderToStaticMarkup(createElement(MapView, {
       ...baseProps,
       schedules: [],
+      liveLocationGroupId: "group-1",
       liveLocationGroupName: "주말 모임",
       liveLocations: [{
         userId: "user-1",
@@ -56,5 +58,12 @@ describe("MapView 시간대 탐색 UI", () => {
       }],
     }));
     expect(html).toContain("주말 모임 · 현재 위치 1명");
+  });
+
+  it("같은 그룹의 위치가 갱신되어도 지도 화면 범위를 다시 맞추지 않는다", () => {
+    expect(shouldFitLiveLocations("group-1", "group-1", 2)).toBe(false);
+    expect(shouldFitLiveLocations(null, "group-1", 2)).toBe(true);
+    expect(shouldFitLiveLocations("group-1", "group-2", 1)).toBe(true);
+    expect(shouldFitLiveLocations("group-1", "group-2", 0)).toBe(false);
   });
 });

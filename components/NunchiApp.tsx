@@ -640,6 +640,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
             schedules={mapSchedules}
             selectedDate={selectedDate}
             liveLocations={visibleLocationGroupId ? liveLocations : []}
+            liveLocationGroupId={visibleLocationGroupId}
             liveLocationGroupName={groups.find((group) => group.id === visibleLocationGroupId)?.name ?? null}
           />
           <div className={`result-panel ${conflict?.hasConflict ? "has-conflict" : ""}`} id="schedule-check">
