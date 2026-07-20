@@ -27,11 +27,15 @@ const schedules: MapSchedule[] = [{
 }];
 
 describe("MapView 시간대 탐색 UI", () => {
-  it("선택 날짜에 일정이 있으면 시간 슬라이더와 하루 전체 버튼을 표시한다", () => {
+  it("선택 날짜에 일정이 있으면 시작·종료 시간 슬라이더와 하루 전체 버튼을 표시한다", () => {
     const html = renderToStaticMarkup(createElement(MapView, { ...baseProps, schedules }));
     expect(html).toContain("시간대 탐색");
     expect(html).toContain("하루 전체");
-    expect(html).toContain('type="range"');
+    expect(html.match(/type="range"/g)).toHaveLength(2);
+    expect(html).toContain("지도에서 확인할 시작 시간");
+    expect(html).toContain("지도에서 확인할 종료 시간");
+    expect(html).toContain("09:00");
+    expect(html).toContain("18:00");
     expect(html).toContain("하루 일정 1개");
   });
 
