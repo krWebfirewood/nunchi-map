@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { NunchiPinIcon } from "@/components/brand/NunchiPinIcon";
 import { loadKakaoMaps, type KakaoMap, type KakaoOverlay } from "@/lib/kakao/maps";
 import { isScheduleActiveInRange, summarizeSchedulesInRange } from "@/lib/map/timeExplorer";
+import { pinMoodForConflictCount, pinMoodForRiskLevel, scheduleConflictCountInRange, type PinMood } from "@/lib/map/pinMood";
 
 export interface MapSchedule {
   id: string;
@@ -32,6 +34,7 @@ interface MapViewProps {
   longitude: number;
   radiusMeters: number;
   conflictState: "unchecked" | "safe" | "conflict";
+  conflictRiskLevel: "low" | "medium" | "high" | null;
   schedules: MapSchedule[];
   selectedDate: string;
   dataState: "loading" | "error" | "ready";
@@ -52,6 +55,30 @@ function isExplorerScheduleActive(schedule: MapSchedule, mode: "all" | "time", s
   return mode === "all" || isScheduleActiveInRange(schedule, startMinutes, endMinutes);
 }
 
+function createMapPinElement(mood: PinMood): HTMLDivElement {
+  const pin = document.createElement("div");
+  pin.className = `nunchi-map-pin ${mood}`;
+  pin.setAttribute("aria-hidden", "true");
+  const body = document.createElement("span");
+  body.className = "nunchi-map-pin-body";
+  const face = document.createElement("span");
+  face.className = "nunchi-map-pin-face";
+  const leftEye = document.createElement("i");
+  leftEye.className = "pin-eye left";
+  const rightEye = document.createElement("i");
+  rightEye.className = "pin-eye right";
+  const leftBrow = document.createElement("b");
+  leftBrow.className = "pin-brow left";
+  const rightBrow = document.createElement("b");
+  rightBrow.className = "pin-brow right";
+  const mouth = document.createElement("em");
+  mouth.className = "pin-mouth";
+  face.append(leftBrow, rightBrow, leftEye, rightEye, mouth);
+  body.append(face);
+  pin.append(body);
+  return pin;
+}
+
 export function shouldFitLiveLocations(previousGroupId: string | null, currentGroupId: string | null, locationCount: number): boolean {
   return currentGroupId !== null && previousGroupId !== currentGroupId && locationCount > 0;
 }
@@ -62,6 +89,7 @@ export function MapView({
   longitude,
   radiusMeters,
   conflictState,
+  conflictRiskLevel,
   schedules,
   selectedDate,
   dataState,
@@ -147,14 +175,22 @@ export function MapView({
         for (const group of groupedSchedules) {
           const representative = group[0];
           const groupActive = group.some((schedule) => isExplorerScheduleActive(schedule, timeMode, explorerStartMinutes, explorerEndMinutes));
+          const rangeStart = timeMode === "all" ? 0 : explorerStartMinutes;
+          const rangeEnd = timeMode === "all" ? 1440 : explorerEndMinutes;
+          const conflictCount = Math.max(...group.map((schedule) => scheduleConflictCountInRange(schedule, schedules, rangeStart, rangeEnd)));
+          const pinMood = pinMoodForConflictCount(conflictCount);
           const label = document.createElement("div");
-          label.className = `day-zone-label ${representative.source} ${groupActive ? "active" : "inactive"}`;
+          label.className = `day-zone-label ${representative.source} ${groupActive ? "active" : "inactive"} ${pinMood}`;
+          const pin = createMapPinElement(pinMood);
+          const copy = document.createElement("div");
+          copy.className = "day-zone-copy";
           const place = document.createElement("strong");
           const sourceLabel = representative.source === "group" ? "그룹" : representative.shareWithGroups === false ? "내 일정 · 나만 보기" : "내 일정";
           place.textContent = `${sourceLabel} · ${representative.locationName}`;
           const times = document.createElement("span");
           times.textContent = group.map((schedule) => `${formatMinutes(schedule.startMinutes)}–${formatMinutes(schedule.endMinutes)}`).join(" · ");
-          label.append(place, times);
+          copy.append(place, times);
+          label.append(pin, copy);
           scheduleOverlaysRef.current.push(new maps.CustomOverlay({
             map,
             position: new maps.LatLng(representative.latitude, representative.longitude),
@@ -174,7 +210,13 @@ export function MapView({
           map.setCenter(inputCenter);
           scheduleCameraKeyRef.current = inputCameraKey;
         }
-        scheduleOverlaysRef.current.push(new maps.Marker({ map, position: inputCenter }));
+        scheduleOverlaysRef.current.push(new maps.CustomOverlay({
+          map,
+          position: inputCenter,
+          content: createMapPinElement(pinMoodForRiskLevel(conflictRiskLevel)),
+          yAnchor: 1,
+          zIndex: 6,
+        }));
         const isConflict = conflictState === "conflict";
         scheduleOverlaysRef.current.push(new maps.Circle({
           map,
@@ -190,7 +232,7 @@ export function MapView({
 
     });
     return () => { cancelled = true; };
-  }, [appKey, conflictState, explorerEndMinutes, explorerStartMinutes, groupedSchedules, latitude, longitude, mapReady, radiusMeters, schedules, selectedDate, timeMode, viewMode]);
+  }, [appKey, conflictRiskLevel, conflictState, explorerEndMinutes, explorerStartMinutes, groupedSchedules, latitude, longitude, mapReady, radiusMeters, schedules, selectedDate, timeMode, viewMode]);
 
   useEffect(() => {
     if (!appKey || !mapReady || !mapRef.current) return;
@@ -304,7 +346,7 @@ export function MapView({
       <div className={`mock-map ${conflictState}`} aria-label={`${locationName} 지도 목업`}>
           <div className="mock-map-grid" aria-hidden="true" />
           <div className="mock-circle" style={{ width: circleSize, height: circleSize }} aria-hidden="true" />
-          <div className="mock-marker" aria-hidden="true"><span /></div>
+          <NunchiPinIcon mood={pinMoodForRiskLevel(conflictRiskLevel)} className="mock-marker-icon" />
           <div className="map-place-label"><strong>{locationName}</strong><span>{latitude.toFixed(4)}, {longitude.toFixed(4)}</span></div>
           {mapControls}
           <div className="map-mode-badge">{loadError ? "Kakao 지도 연결 실패 · 목업 모드" : "지도 목업 모드"}</div>

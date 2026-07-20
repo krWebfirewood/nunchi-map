@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { MonthCalendar } from "@/components/calendar/MonthCalendar";
+import { NunchiPinIcon } from "@/components/brand/NunchiPinIcon";
 import { LocationSearch, type SelectedLocation } from "@/components/map/LocationSearch";
 import { MapView, type LiveMapLocation, type MapSchedule } from "@/components/map/MapView";
 import { GettingStarted } from "@/components/onboarding/GettingStarted";
@@ -655,12 +656,12 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
 
   if (!sessionReady) return <main className="session-screen"><div className="session-card"><p className="eyebrow">PRIVATE SESSION</p><h1>눈치맵을 준비하고 있어요</h1></div></main>;
 
-  if (!userId) return <main className="session-screen"><section className="session-card"><span className="brand-mark" aria-hidden="true">눈</span><p className="eyebrow">PRIVATE ACCOUNT</p><h1>내 일정으로<br />시작해 볼까요?</h1><div className="auth-tabs"><button type="button" className={authMode === "login" ? "active" : ""} onClick={() => { setAuthMode("login"); setAuthMessage(""); }}>로그인</button><button type="button" className={authMode === "signup" ? "active" : ""} onClick={() => { setAuthMode("signup"); setAuthMessage(""); }}>회원가입</button></div><form className="auth-form" onSubmit={(event) => void submitCredentials(event)}>{authMode === "signup" && <label>닉네임<input value={authNickname} onChange={(event) => setAuthNickname(event.target.value)} minLength={2} maxLength={20} autoComplete="nickname" required /></label>}<label>아이디<input value={authLoginId} onChange={(event) => setAuthLoginId(event.target.value.toLowerCase())} minLength={4} maxLength={24} pattern="[a-z0-9_]+" autoComplete="username" required /></label><label>비밀번호<input type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} minLength={authMode === "signup" ? 8 : 1} maxLength={72} autoComplete={authMode === "signup" ? "new-password" : "current-password"} required /></label><button type="submit" disabled={authBusy}>{authBusy ? "처리 중…" : authMode === "signup" ? "가입하고 시작" : "로그인"}</button></form>{authMessage && <p className="form-message" role="status">{authMessage}</p>}<div className="auth-divider"><span>또는 개발용 데모 계정</span></div><div className="session-users">{users.map((user) => <button key={user.id} type="button" onClick={() => void login(user.id)}><strong>{user.nickname}</strong><span>바로 체험</span></button>)}</div>{message && <p className="form-message" role="status">{message}</p>}</section></main>;
+  if (!userId) return <main className="session-screen"><section className="session-card"><span className="brand-mark login-brand-mark"><NunchiPinIcon mood="happy" /></span><p className="eyebrow">PRIVATE ACCOUNT</p><h1>내 일정으로<br />시작해 볼까요?</h1><div className="auth-tabs"><button type="button" className={authMode === "login" ? "active" : ""} onClick={() => { setAuthMode("login"); setAuthMessage(""); }}>로그인</button><button type="button" className={authMode === "signup" ? "active" : ""} onClick={() => { setAuthMode("signup"); setAuthMessage(""); }}>회원가입</button></div><form className="auth-form" onSubmit={(event) => void submitCredentials(event)}>{authMode === "signup" && <label>닉네임<input value={authNickname} onChange={(event) => setAuthNickname(event.target.value)} minLength={2} maxLength={20} autoComplete="nickname" required /></label>}<label>아이디<input value={authLoginId} onChange={(event) => setAuthLoginId(event.target.value.toLowerCase())} minLength={4} maxLength={24} pattern="[a-z0-9_]+" autoComplete="username" required /></label><label>비밀번호<input type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} minLength={authMode === "signup" ? 8 : 1} maxLength={72} autoComplete={authMode === "signup" ? "new-password" : "current-password"} required /></label><button type="submit" disabled={authBusy}>{authBusy ? "처리 중…" : authMode === "signup" ? "가입하고 시작" : "로그인"}</button></form>{authMessage && <p className="form-message" role="status">{authMessage}</p>}<div className="auth-divider"><span>또는 개발용 데모 계정</span></div><div className="session-users">{users.map((user) => <button key={user.id} type="button" onClick={() => void login(user.id)}><strong>{user.nickname}</strong><span>바로 체험</span></button>)}</div>{message && <p className="form-message" role="status">{message}</p>}</section></main>;
 
   return (
     <main>
       <header className="site-header">
-        <a className="brand" href="#top" aria-label="눈치맵 홈"><span className="brand-mark" aria-hidden="true">눈</span><span>눈치맵</span></a>
+        <a className="brand" href="#top" aria-label="눈치맵 홈"><span className="brand-mark"><NunchiPinIcon mood="happy" /></span><span>눈치맵</span></a>
         <div className="header-copy">비공개 그룹 안에서 일정 위치를 공유하고 겹침 가능성을 확인해요</div>
         <div className="session-user"><span>{currentUser?.nickname}</span><button type="button" onClick={() => void logout()}>로그아웃</button></div>
       </header>
@@ -683,6 +684,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
             longitude={longitude}
             radiusMeters={radiusMeters}
             conflictState={conflictState}
+            conflictRiskLevel={conflict?.riskLevel ?? null}
             schedules={mapSchedules}
             selectedDate={selectedDate}
             dataState={schedulesLoading ? "loading" : scheduleLoadError ? "error" : "ready"}
