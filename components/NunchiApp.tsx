@@ -15,6 +15,7 @@ type ParsedSchedule = { date: string; startTime: string; endTime: string; locati
 type RecommendationCandidate = { id: string; type: "location" | "time"; title: string; description: string; locationName: string; latitude: number; longitude: number; startMinutes: number; endMinutes: number; estimatedRisk: "low" };
 type Recommendation = { summary: string; candidates: RecommendationCandidate[]; explainedByAi: boolean };
 type Group = { id: string; name: string; inviteCode: string; memberCount: number; role: "owner" | "member" };
+const aiFeatureEnabled = process.env.NEXT_PUBLIC_AI_FEATURE_ENABLED === "true";
 
 function toMinutes(value: string): number {
   const [hours, minutes] = value.split(":").map(Number);
@@ -345,7 +346,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
       if (!response.ok) { setMessage(data.message ?? "대안 추천에 실패했습니다."); return; }
       setRecommendation(data as Recommendation);
       setRecommending(false);
-      if (data.candidates.length === 0) return;
+      if (!aiFeatureEnabled || data.candidates.length === 0) return;
 
       setExplainingRecommendation(true);
       const explanationResponse = await fetch("/api/ai/recommend/explain", {
@@ -494,12 +495,17 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         <div className="header-copy">비공개 그룹 안에서 일정 위치를 공유하고 겹침 가능성을 확인해요</div>
         <div className="session-user"><span>{currentUser?.nickname}</span><button type="button" onClick={() => void logout()}>로그아웃</button></div>
       </header>
+      <nav className="mobile-nav" aria-label="빠른 이동">
+        <a href="#map-area">지도</a>
+        <a href="#schedule-title">등록</a>
+        <a href="#groups">그룹</a>
+      </nav>
       <section className="hero" id="top">
         <div><p className="eyebrow">PRIVATE ROUTE PLANNER</p><h1>마주치고 싶지 않은 날,<br />조금 다르게 움직여요.</h1><p className="hero-description">다른 사람의 이름이나 정확한 일정을 보여주지 않고,<br />선택한 시간과 지역의 익명 겹침 가능성만 알려드립니다.</p></div>
         <aside className="privacy-note"><span className="privacy-icon" aria-hidden="true">✓</span><div><strong>비공개 그룹 공유</strong><p>같은 그룹에는 일정 위치를 표시하지만 사용자 이름은 공개하지 않아요.</p></div></aside>
       </section>
       {onboardingReady && (groups.length === 0 || !hasAnySchedule) && <GettingStarted hasGroup={groups.length > 0} hasSchedule={hasAnySchedule} onGroupSetup={focusGroupSetup} onScheduleSetup={focusScheduleSetup} />}
-      <section className="workspace" aria-label="일정 확인 작업 영역">
+      <section className="workspace" id="map-area" aria-label="일정 확인 작업 영역">
         <MonthCalendar key={`${userId}-${selectedDate.slice(0, 7)}`} selectedDate={selectedDate} scheduleCount={schedules.length} refreshKey={calendarRefreshKey} onSelectDate={(date) => { setEditingScheduleId(null); setSelectedDate(date); resetCheckResult(); }} />
         <div className="map-stack">
           <MapView
@@ -555,13 +561,13 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
           <div className="group-card-actions"><small>{group.role === "owner" ? "생성자만 이 그룹을 삭제할 수 있습니다." : "탈퇴하면 이 그룹의 공유 일정이 보이지 않습니다."}</small><button type="button" className={group.role === "owner" ? "delete-group" : "leave-group"} disabled={groupActionId !== null || groupBusy} onClick={() => void runGroupAction(group)}>{groupActionId === group.id ? "처리 중…" : group.role === "owner" ? "그룹 삭제" : "그룹 탈퇴"}</button></div>
         </article>)}</div>
       </section>
-      <section className="composer" aria-labelledby="composer-title">
+      {aiFeatureEnabled && <section className="composer" aria-labelledby="composer-title">
         <div><p className="eyebrow">LOCAL OLLAMA</p><h2 id="composer-title">말하듯 입력해도 괜찮아요</h2><p>환경변수로 선택한 로컬 Ollama 모델이 문장을 구조화하고, 서버가 결과 형식을 다시 검증합니다.</p></div>
         <div className="ai-composer">
           <div className="input-shell"><textarea aria-label="자연어 일정" value={naturalText} onChange={(event) => { parsingRequestRef.current?.abort(); setDraftingSchedule(false); setAnalyzing(false); setNaturalText(event.target.value); }} rows={3} /><button type="button" disabled={draftingSchedule || analyzing} onClick={() => void analyzeNaturalLanguage()}>{draftingSchedule ? "초안 만드는 중…" : analyzing ? "초안 표시됨 · AI 확인 중…" : "AI로 분석"}</button></div>
           {assumptions.length > 0 && <div className="assumption-box"><strong>{analyzing ? "현재 빠른 초안" : "AI가 적용한 해석"}</strong><ul>{assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}</ul></div>}
         </div>
-      </section>
+      </section>}
       <footer>눈치맵은 사람을 피하는 앱이 아니라, 서로의 개인 시간을 존중하는 익명 동선 조정 서비스입니다.</footer>
     </main>
   );

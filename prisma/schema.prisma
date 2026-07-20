@@ -3,67 +3,71 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 model User {
-  id String @id @default(cuid())
-  nickname String
-  loginId String? @unique
+  id           String        @id @default(cuid())
+  nickname     String
+  loginId      String?       @unique
   passwordHash String?
-  createdAt DateTime @default(now())
-  schedules Schedule[]
-  memberships GroupMember[]
-  ownedGroups Group[] @relation("GroupOwner")
-  sessions Session[]
+  createdAt    DateTime      @default(now())
+  schedules    Schedule[]
+  memberships  GroupMember[]
+  ownedGroups  Group[]       @relation("GroupOwner")
+  sessions     Session[]
 }
 
 model Group {
-  id String @id @default(cuid())
-  name String
-  inviteCode String @unique
-  ownerId String?
-  createdAt DateTime @default(now())
-  owner User? @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  members GroupMember[]
+  id         String        @id @default(cuid())
+  name       String
+  inviteCode String        @unique
+  ownerId    String?
+  createdAt  DateTime      @default(now())
+  owner      User?         @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  members    GroupMember[]
+
   @@index([ownerId])
 }
 
 model GroupMember {
-  id String @id @default(cuid())
-  groupId String
-  userId String
+  id       String   @id @default(cuid())
+  groupId  String
+  userId   String
   joinedAt DateTime @default(now())
-  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group    Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([groupId, userId])
   @@index([userId])
 }
 
 model Session {
-  id String @id @default(cuid())
-  userId String
+  id        String   @id @default(cuid())
+  userId    String
   expiresAt DateTime
   createdAt DateTime @default(now())
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
   @@index([expiresAt])
 }
 
 model Schedule {
-  id String @id @default(cuid())
-  userId String
-  date DateTime
-  startMinutes Int
-  endMinutes Int
-  locationName String
-  latitude Float
-  longitude Float
-  radiusMeters Int @default(1500)
-  shareWithGroups Boolean @default(true)
-  createdAt DateTime @default(now())
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id              String   @id @default(cuid())
+  userId          String
+  date            DateTime
+  startMinutes    Int
+  endMinutes      Int
+  locationName    String
+  latitude        Float
+  longitude       Float
+  radiusMeters    Int      @default(1500)
+  shareWithGroups Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([date])
   @@index([userId])
 }

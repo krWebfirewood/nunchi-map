@@ -8,6 +8,7 @@ const requestSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  if (process.env.AI_FEATURE_ENABLED !== "true") return Response.json({ message: "AI 일정 분석 기능이 현재 비활성화되어 있습니다." }, { status: 404 });
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ message: "분석할 일정 문장을 확인해 주세요." }, { status: 400 });
   try {

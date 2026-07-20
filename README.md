@@ -5,7 +5,7 @@
 ## 현재 구현 범위
 
 - Next.js, TypeScript strict mode, Tailwind CSS 기반 앱 골격
-- Prisma + SQLite `User`, `Schedule` 모델과 3명의 데모 사용자/일정 시드
+- Prisma + Supabase Postgres 기준 `User`, `Schedule` 모델과 3명의 데모 사용자/일정 시드
 - 시간 중복, Haversine 거리, 최종 충돌 판정 로직
 - 핵심 계산 로직 단위 테스트
 - 오늘 강조, 날짜 선택, 이전/다음 달 이동과 날짜별 일정 수·충돌 위험 상태를 보여주는 월간 캘린더
@@ -15,21 +15,20 @@
 - 선택 날짜의 지도를 30분 단위로 탐색하거나 하루 전체 영역을 확인하는 독립 시간 슬라이더
 - Kakao Maps JavaScript SDK 어댑터와 키 없는 지도 목업 모드
 - 선택 장소 마커, 확인 반경, 충돌 상태에 따른 영역 색상
-- 환경변수로 교체 가능한 로컬 Ollama 모델 기반 한국어 자연어 일정 분석
+- 기본 비활성화된 로컬 Ollama 기반 한국어 자연어 일정 분석 실험 기능
 - JSON Schema 출력 강제와 Zod 재검증, 실패 시 직접 입력 유지
 - 서버가 검증한 충돌 없는 대체 장소·시간 후보와 후보 적용 기능
-- Ollama의 후보 설명 및 연결 실패 시 서버 계산 결과 폴백
-- 안전 후보를 즉시 표시하고 Ollama 설명은 백그라운드에서 갱신하는 추천 UX
+- AI 기능을 꺼도 동작하는 서버 계산 기반 대체 장소·시간 추천 UX
 - HttpOnly 쿠키 기반 로컬 데모 세션과 서버 측 일정 소유권 검사
 - 아이디·비밀번호·닉네임 회원가입과 scrypt 비밀번호 해시 로그인
-- 명시된 한국어 날짜·시간·장소를 즉시 초안으로 만들고 Ollama 결과로 갱신하는 입력 UX
+- AI 기능을 켰을 때 명시된 한국어 날짜·시간·장소를 즉시 초안으로 만들고 Ollama 결과로 갱신하는 입력 UX
 - 초대 코드로 생성·참여하는 비공개 그룹과 그룹 범위 충돌 계산
 - 그룹 생성자 역할, 초대 코드 복사, 구성원 탈퇴와 생성자 전용 그룹 삭제
 - 신규 사용자의 그룹 연결·첫 일정 등록·지도 확인을 안내하는 빠른 시작 패널과 행동형 빈 화면
 - 일정별 `그룹 공유`·`나만 보기` 전환
 - 중복 삭제 요청을 안전하게 처리하는 원자적 일정 삭제와 버튼 잠금
 
-Kakao JavaScript 키를 설정하면 실제 지도가 활성화되며, 키가 없거나 SDK 연결에 실패하면 목업 지도가 유지됩니다. 자연어 분석은 로컬 Ollama만 호출하며 실패해도 직접 입력 기능은 유지됩니다. 일정 저장 직전에는 최신 데이터를 기준으로 트랜잭션 안에서 충돌을 다시 확인합니다.
+Kakao JavaScript 키를 설정하면 실제 지도가 활성화되며, 키가 없거나 SDK 연결에 실패하면 목업 지도가 유지됩니다. 자연어 분석은 배포 기본값에서 숨겨져 있으며, `AI_FEATURE_ENABLED`와 `NEXT_PUBLIC_AI_FEATURE_ENABLED`를 모두 `true`로 켠 환경에서만 로컬 Ollama를 호출합니다. AI 기능을 꺼도 직접 입력과 서버 계산 기반 추천은 유지됩니다. 일정 저장 직전에는 최신 데이터를 기준으로 트랜잭션 안에서 충돌을 다시 확인합니다.
 
 첫 화면에서 새 계정을 만들거나 기존 계정으로 로그인할 수 있으며, 개발용 데모 사용자를 바로 선택할 수도 있습니다. 비밀번호는 평문으로 저장하지 않고 Node.js `scrypt`로 해시합니다. 로그인하면 7일짜리 HttpOnly 로컬 세션이 생성됩니다. 이후 일정 조회·등록·삭제 API는 브라우저가 보낸 세션을 기준으로 사용자를 확인하며, 클라이언트가 임의로 보낸 사용자 ID를 신뢰하지 않습니다. 내 일정은 위치와 관계없이 같은 날짜의 시간 중복을 금지합니다. 그룹 충돌 검사는 본인 일정을 개수에서 제외하고, 현재 사용자와 하나 이상의 비공개 그룹을 공유하는 다른 구성원의 공유 일정만 대상으로 시간과 위치를 함께 비교합니다. 일정별 `그룹 공유` 설정은 기본으로 켜져 있으며 등록 전이나 저장 후에 `나만 보기`로 바꿀 수 있습니다. 공유 일정의 위치와 시간은 같은 비공개 그룹 지도에 표시하되 사용자 이름은 숨깁니다. 그룹 일정과 충돌해도 경고와 위험도 배지를 표시한 뒤 저장할 수 있으며, 본인 일정의 시간 중복만 저장을 차단합니다. 기본 데모 그룹의 초대 코드는 `NUNCHI`입니다.
 
@@ -51,7 +50,15 @@ npm run db:seed
 npm run dev
 ```
 
+`.env`의 `DATABASE_URL`에는 Supabase Postgres 연결 문자열을 넣습니다. 로컬 SQLite 파일은 더 이상 기본 DB가 아니므로, 개발용으로도 Supabase 프로젝트 하나를 연결해 두는 방식을 권장합니다.
+
 브라우저에서 `http://localhost:3000`을 엽니다.
+
+### Vercel + Supabase 배포
+
+Vercel 프로젝트 환경 변수에는 최소한 `DATABASE_URL`, `NEXT_PUBLIC_MAP_PROVIDER`, `NEXT_PUBLIC_KAKAO_MAP_KEY`, `AI_FEATURE_ENABLED=false`, `NEXT_PUBLIC_AI_FEATURE_ENABLED=false`를 등록합니다. Supabase는 Project Settings의 Postgres 연결 문자열을 사용하면 됩니다.
+
+배포 도메인이 정해지면 Kakao Developers의 JavaScript SDK 도메인에 `https://배포도메인`을 추가해야 실제 지도가 표시됩니다. Vercel 배포 환경에서는 로컬 PC의 `http://localhost:11434` Ollama에 접근할 수 없으므로, AI 기능은 기본적으로 꺼둡니다.
 
 ### 같은 네트워크에서 데모 공유
 
@@ -68,6 +75,13 @@ DEV_ALLOWED_ORIGINS="10.48.17.162"
 Kakao Developers에서 앱을 만든 뒤 Kakao Map 사용 설정을 켜고 JavaScript 키의 SDK 도메인에 `http://localhost:3000`을 등록합니다. `.env`의 `NEXT_PUBLIC_KAKAO_MAP_KEY`에 JavaScript 키를 넣고 개발 서버를 다시 시작하세요. REST API 키가 아닌 JavaScript 키가 필요합니다.
 
 ### Ollama 자연어 분석
+
+배포판에서는 기본적으로 숨겨져 있습니다. 로컬 실험용으로 다시 켜려면 `.env`에서 아래 두 값을 모두 `true`로 바꾸고 개발 서버를 재시작하세요.
+
+```dotenv
+AI_FEATURE_ENABLED="true"
+NEXT_PUBLIC_AI_FEATURE_ENABLED="true"
+```
 
 ```powershell
 ollama pull qwen2.5:7b
