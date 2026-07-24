@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 export const LIVE_LOCATION_TTL_MS = 2 * 60 * 1000;
-export const LIVE_LOCATION_POLL_MS = 5_000;
+export const LIVE_LOCATION_POLL_MS = 15_000;
+export const LIVE_LOCATION_MIN_PUBLISH_MS = 8_000;
 
 export const liveLocationInputSchema = z.object({
   groupId: z.string().min(1),
@@ -20,7 +21,6 @@ export function isLiveLocationFresh(expiresAt: Date, now = new Date()): boolean 
   return expiresAt.getTime() > now.getTime();
 }
 
-export function resolveVisibleLocationGroupId(currentGroupId: string | null, groupIds: string[]): string | null {
-  if (currentGroupId && groupIds.includes(currentGroupId)) return currentGroupId;
-  return groupIds.length === 1 ? groupIds[0] : null;
+export function shouldPublishLiveLocation(lastPublishedAt: number | null, now = Date.now()): boolean {
+  return lastPublishedAt === null || now - lastPublishedAt >= LIVE_LOCATION_MIN_PUBLISH_MS;
 }

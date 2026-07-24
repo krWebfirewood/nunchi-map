@@ -74,7 +74,7 @@ describe("MapView 시간대 탐색 UI", () => {
       }],
     }));
     expect(html).toContain("주말 모임 · 현재 위치 1명");
-    expect(html).toContain("5초마다 확인");
+    expect(html).toContain("15초마다 확인");
   });
 
   it("새 구성원이 나타날 때만 지도 화면 범위를 다시 맞춘다", () => {

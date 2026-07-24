@@ -7,7 +7,7 @@ import { LocationSearch, type SelectedLocation } from "@/components/map/Location
 import { MapView, type LiveMapLocation, type MapSchedule } from "@/components/map/MapView";
 import { GettingStarted } from "@/components/onboarding/GettingStarted";
 import { DEMO_LOCATIONS } from "@/lib/locations";
-import { LIVE_LOCATION_POLL_MS, resolveVisibleLocationGroupId } from "@/lib/locations/live";
+import { LIVE_LOCATION_POLL_MS, shouldPublishLiveLocation } from "@/lib/locations/live";
 import { searchKakaoPlaces } from "@/lib/kakao/maps";
 
 type User = { id: string; nickname: string };
@@ -33,11 +33,23 @@ function formatClock(value: number): string {
   return new Date(value).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 }
 
+async function readJson<T>(response: Response): Promise<T | null> {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
 export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [users, setUsers] = useState<User[]>([]);
   const [userId, setUserId] = useState("");
   const [sessionNickname, setSessionNickname] = useState("");
   const [sessionReady, setSessionReady] = useState(false);
+  const [sessionLoadError, setSessionLoadError] = useState("");
+  const [sessionRetryKey, setSessionRetryKey] = useState(0);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [authLoginId, setAuthLoginId] = useState("");
   const [authPassword, setAuthPassword] = useState("");
@@ -63,7 +75,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const locationHeartbeatRef = useRef<number | null>(null);
   const latestPositionRef = useRef<GeolocationPosition | null>(null);
   const sharingLocationGroupRef = useRef<string | null>(null);
-  const liveLocationRequestRef = useRef(0);
+  const locationPublishInFlightRef = useRef(false);
+  const lastLocationPublishedAtRef = useRef<number | null>(null);
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [groupSchedules, setGroupSchedules] = useState<MapSchedule[]>([]);
@@ -101,9 +114,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const recommendationRequestRef = useRef<AbortController | null>(null);
   const mapSchedules = useMemo(() => [...schedules, ...groupSchedules], [groupSchedules, schedules]);
   const currentUser = users.find((user) => user.id === userId) ?? (userId ? { id: userId, nickname: sessionNickname } : undefined);
-  const activeLocationGroupId = groupsLoadedFor === userId
-    ? resolveVisibleLocationGroupId(visibleLocationGroupId, groups.map((group) => group.id))
-    : visibleLocationGroupId;
+  const activeLocationGroupId = visibleLocationGroupId;
   const visibleLocationGroup = groups.find((group) => group.id === activeLocationGroupId);
   const liveLocationSyncLabel = liveLocationSyncState === "loading"
     ? "위치를 처음 불러오는 중…"
@@ -137,16 +148,36 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   }, [selectedDate, userId]);
 
   useEffect(() => {
-    void Promise.all([
-      fetch("/api/users").then((response) => response.json()) as Promise<{ users: User[] }>,
-      fetch("/api/session").then((response) => response.json()) as Promise<{ user: User | null }>,
-    ]).then(([userData, sessionData]) => {
-      setUsers(userData.users);
-      if (sessionData.user) setSchedulesLoading(true);
-      setUserId(sessionData.user?.id ?? "");
-      setSessionNickname(sessionData.user?.nickname ?? "");
-    }).finally(() => setSessionReady(true));
-  }, []);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const sessionResponse = await fetch("/api/session", { cache: "no-store" });
+        const sessionData = await readJson<{ user?: User | null; message?: string }>(sessionResponse);
+        if (!sessionResponse.ok || !sessionData || !("user" in sessionData)) {
+          throw new Error(sessionData?.message ?? "로그인 상태를 확인하지 못했습니다.");
+        }
+        if (cancelled) return;
+        if (sessionData.user) {
+          setSchedulesLoading(true);
+          setUserId(sessionData.user.id);
+          setSessionNickname(sessionData.user.nickname);
+          return;
+        }
+
+        const usersResponse = await fetch("/api/users", { cache: "no-store" });
+        const userData = await readJson<{ users?: User[]; message?: string }>(usersResponse);
+        if (!usersResponse.ok || !userData?.users) {
+          throw new Error(userData?.message ?? "사용자 목록을 불러오지 못했습니다.");
+        }
+        if (!cancelled) setUsers(userData.users);
+      } catch (error) {
+        if (!cancelled) setSessionLoadError(error instanceof Error ? error.message : "로그인 상태를 확인하지 못했습니다.");
+      } finally {
+        if (!cancelled) setSessionReady(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionRetryKey]);
 
   const loadGroups = useCallback(async () => {
     if (!userId) return setGroups([]);
@@ -193,47 +224,42 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     return () => controller.abort();
   }, [selectedDate, userId]);
 
-  const loadLiveLocations = useCallback(async (groupId: string) => {
-    const requestId = ++liveLocationRequestRef.current;
-    try {
-      const response = await fetch(`/api/live-locations?groupId=${encodeURIComponent(groupId)}`, { cache: "no-store" });
-      const data = await response.json().catch(() => null) as { locations?: LiveMapLocation[] } | null;
-      if (liveLocationRequestRef.current !== requestId) return;
-      if (!response.ok) {
-        setLiveLocationSyncState("error");
-        return;
-      }
-      setLiveLocations(data?.locations ?? []);
-      setLiveLocationsUpdatedAt(Date.now());
-      setLiveLocationSyncState("ready");
-    } catch {
-      if (liveLocationRequestRef.current === requestId) setLiveLocationSyncState("error");
-    }
-  }, []);
-
   useEffect(() => {
-    if (!userId || !activeLocationGroupId) {
-      liveLocationRequestRef.current += 1;
-      return;
-    }
-    const refresh = () => void loadLiveLocations(activeLocationGroupId);
-    const refreshWhenVisible = () => { if (!document.hidden) refresh(); };
-    const initialId = window.setTimeout(() => {
-      setLiveLocations([]);
-      setLiveLocationsUpdatedAt(null);
-      setLiveLocationSyncState("loading");
-      refresh();
-    }, 0);
-    const intervalId = window.setInterval(refresh, LIVE_LOCATION_POLL_MS);
-    window.addEventListener("focus", refresh);
+    if (!userId || !activeLocationGroupId) return;
+    let stopped = false;
+    let inFlight = false;
+    const refresh = async () => {
+      if (stopped || inFlight || document.hidden) return;
+      inFlight = true;
+      try {
+        const response = await fetch(`/api/live-locations?groupId=${encodeURIComponent(activeLocationGroupId)}`, { cache: "no-store" });
+        const data = await readJson<{ locations?: LiveMapLocation[] }>(response);
+        if (stopped) return;
+        if (!response.ok) {
+          setLiveLocationSyncState("error");
+          return;
+        }
+        setLiveLocations(data?.locations ?? []);
+        setLiveLocationsUpdatedAt(Date.now());
+        setLiveLocationSyncState("ready");
+      } catch {
+        if (!stopped) setLiveLocationSyncState("error");
+      } finally {
+        inFlight = false;
+      }
+    };
+    const refreshWhenVisible = () => { if (!document.hidden) void refresh(); };
+    void refresh();
+    const intervalId = window.setInterval(() => void refresh(), LIVE_LOCATION_POLL_MS);
+    window.addEventListener("focus", refreshWhenVisible);
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
-      window.clearTimeout(initialId);
+      stopped = true;
       window.clearInterval(intervalId);
-      window.removeEventListener("focus", refresh);
+      window.removeEventListener("focus", refreshWhenVisible);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [activeLocationGroupId, loadLiveLocations, userId]);
+  }, [activeLocationGroupId, userId]);
 
   useEffect(() => {
     const stopOnExit = () => {
@@ -516,8 +542,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   async function login(selectedUserId: string) {
     setMessage("");
     const response = await fetch("/api/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: selectedUserId }) });
-    const data = await response.json();
-    if (!response.ok) { setMessage(data.message ?? "로그인에 실패했습니다."); return; }
+    const data = await readJson<{ message?: string; user?: User }>(response);
+    if (!response.ok || !data?.user) { setMessage(data?.message ?? "로그인 요청에 실패했습니다. 잠시 후 다시 시도해 주세요."); return; }
     setSchedulesLoading(true);
     setScheduleLoadError(false);
     setUserId(data.user.id);
@@ -549,23 +575,43 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     setUserId(""); setSessionNickname(""); setSchedules([]); setGroupSchedules([]); setGroups([]); setHasAnySchedule(false); setGroupsLoadedFor(""); setSchedulesLoadedFor(""); setSchedulesLoading(false); setScheduleLoadError(false); setVisibleLocationGroupId(null); setLiveLocations([]); setLiveLocationSyncState("idle"); setLiveLocationsUpdatedAt(null); resetCheckResult();
   }
 
-  async function publishLiveLocation(groupId: string, position: GeolocationPosition) {
+  async function publishLiveLocation(groupId: string, position: GeolocationPosition, force = false) {
     latestPositionRef.current = position;
-    const response = await fetch("/api/live-locations", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        groupId,
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        accuracyMeters: position.coords.accuracy,
-      }),
-    });
-    if (!response.ok) throw new Error("현재 위치를 그룹에 공유하지 못했습니다.");
-    setSharingLocationGroupId(groupId);
-    setLocationShareState("active");
-    setLocationShareMessage("위치 공유 중 · 다른 구성원 지도에는 최대 5초 안에 반영됩니다.");
-    void loadLiveLocations(groupId);
+    if (locationPublishInFlightRef.current) return;
+    if (!force && !shouldPublishLiveLocation(lastLocationPublishedAtRef.current)) return;
+    locationPublishInFlightRef.current = true;
+    try {
+      const response = await fetch("/api/live-locations", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          groupId,
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracyMeters: position.coords.accuracy,
+        }),
+      });
+      if (!response.ok) throw new Error("현재 위치를 그룹에 공유하지 못했습니다.");
+      const publishedAt = Date.now();
+      lastLocationPublishedAtRef.current = publishedAt;
+      setSharingLocationGroupId(groupId);
+      setLocationShareState("active");
+      setLocationShareMessage("위치 공유 중 · 다른 구성원 지도에는 최대 15초 안에 반영됩니다.");
+      setLiveLocations((current) => {
+        const ownLocation: LiveMapLocation = {
+          userId,
+          nickname: sessionNickname,
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracyMeters: Math.round(position.coords.accuracy),
+          updatedAt: new Date(publishedAt).toISOString(),
+          isMe: true,
+        };
+        return [ownLocation, ...current.filter((location) => location.userId !== userId)];
+      });
+    } finally {
+      locationPublishInFlightRef.current = false;
+    }
   }
 
   async function startLocationSharing(group: Group) {
@@ -575,7 +621,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
       return;
     }
     if (sharingLocationGroupRef.current) await stopLocationSharing();
-    setVisibleLocationGroupId(group.id);
+    showLiveLocationGroup(group.id);
     setSharingLocationGroupId(group.id);
     setLocationShareState("starting");
     setLocationShareMessage("위치 권한을 확인하고 있어요…");
@@ -604,7 +650,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     locationHeartbeatRef.current = window.setInterval(() => {
       const position = latestPositionRef.current;
       if (position && sharingLocationGroupRef.current === group.id) {
-        void publishLiveLocation(group.id, position).catch(() => setLocationShareMessage("위치 갱신이 잠시 지연되고 있어요."));
+        void publishLiveLocation(group.id, position, true).catch(() => setLocationShareMessage("위치 갱신이 잠시 지연되고 있어요."));
       }
     }, 45_000);
   }
@@ -616,6 +662,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     locationWatchRef.current = null;
     locationHeartbeatRef.current = null;
     latestPositionRef.current = null;
+    locationPublishInFlightRef.current = false;
+    lastLocationPublishedAtRef.current = null;
     sharingLocationGroupRef.current = null;
     setSharingLocationGroupId(null);
     setLocationShareState("idle");
@@ -626,8 +674,18 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ groupId }),
       }).catch(() => undefined);
-      if (activeLocationGroupId === groupId) void loadLiveLocations(groupId);
+      if (activeLocationGroupId === groupId) {
+        setLiveLocations((current) => current.filter((location) => location.userId !== userId));
+      }
     }
+  }
+
+  function showLiveLocationGroup(groupId: string) {
+    if (activeLocationGroupId === groupId) return;
+    setVisibleLocationGroupId(groupId);
+    setLiveLocations([]);
+    setLiveLocationsUpdatedAt(null);
+    setLiveLocationSyncState("loading");
   }
 
   function focusScheduleSetup() {
@@ -704,6 +762,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   }
 
   if (!sessionReady) return <main className="session-screen"><div className="session-card"><p className="eyebrow">PRIVATE SESSION</p><h1>눈치맵을 준비하고 있어요</h1></div></main>;
+
+  if (sessionLoadError) return <main className="session-screen"><section className="session-card session-error-card"><span className="brand-mark login-brand-mark"><NunchiPinIcon mood="worried" /></span><p className="eyebrow">CONNECTION DELAY</p><h1>로그인 상태를<br />확인하지 못했어요</h1><p>{sessionLoadError}</p><button type="button" className="session-retry-button" onClick={() => { setSessionReady(false); setSessionLoadError(""); setSessionRetryKey((value) => value + 1); }}>다시 시도</button></section></main>;
 
   if (!userId) return <main className="session-screen"><section className="session-card"><span className="brand-mark login-brand-mark"><NunchiPinIcon mood="happy" /></span><p className="eyebrow">PRIVATE ACCOUNT</p><h1>내 일정으로<br />시작해 볼까요?</h1><div className="auth-tabs"><button type="button" className={authMode === "login" ? "active" : ""} onClick={() => { setAuthMode("login"); setAuthMessage(""); }}>로그인</button><button type="button" className={authMode === "signup" ? "active" : ""} onClick={() => { setAuthMode("signup"); setAuthMessage(""); }}>회원가입</button></div><form className="auth-form" onSubmit={(event) => void submitCredentials(event)}>{authMode === "signup" && <label>닉네임<input value={authNickname} onChange={(event) => setAuthNickname(event.target.value)} minLength={2} maxLength={20} autoComplete="nickname" required /></label>}<label>아이디<input value={authLoginId} onChange={(event) => setAuthLoginId(event.target.value.toLowerCase())} minLength={4} maxLength={24} pattern="[a-z0-9_]+" autoComplete="username" required /></label><label>비밀번호<input type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} minLength={authMode === "signup" ? 8 : 1} maxLength={72} autoComplete={authMode === "signup" ? "new-password" : "current-password"} required /></label><button type="submit" disabled={authBusy}>{authBusy ? "처리 중…" : authMode === "signup" ? "가입하고 시작" : "로그인"}</button></form>{authMessage && <p className="form-message" role="status">{authMessage}</p>}<div className="auth-divider"><span>또는 개발용 데모 계정</span></div><div className="session-users">{users.map((user) => <button key={user.id} type="button" onClick={() => void login(user.id)}><strong>{user.nickname}</strong><span>바로 체험</span></button>)}</div>{message && <p className="form-message" role="status">{message}</p>}</section></main>;
 
@@ -784,8 +844,8 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         <div className="group-list">{groups.length === 0 ? <div className="empty-state empty-action"><strong>아직 연결된 그룹이 없어요.</strong><span>새 그룹을 만들거나 받은 초대 코드로 참여하세요.</span><button type="button" onClick={focusGroupSetup}>그룹 만들기</button></div> : groups.map((group) => <article key={group.id} className={`${group.role === "owner" ? "is-owner" : ""} ${activeLocationGroupId === group.id ? "is-location-visible" : ""}`}>
           <div className="group-card-heading"><div><strong>{group.name}</strong><span>익명 구성원 {group.memberCount}명</span></div><em>{group.role === "owner" ? "내가 만든 그룹" : "참여한 그룹"}</em></div>
           <div className="group-invite"><span>초대 코드</span><div><code>{group.inviteCode}</code><button type="button" disabled={groupActionId !== null} onClick={() => void copyInviteCode(group)} aria-label={`${group.name} 초대 코드 복사`}>{copiedGroupId === group.id ? "복사됨" : "복사"}</button></div></div>
-          <div className="live-location-actions"><button type="button" className={activeLocationGroupId === group.id ? "active" : ""} aria-pressed={activeLocationGroupId === group.id} onClick={() => setVisibleLocationGroupId(group.id)}>{activeLocationGroupId === group.id ? "지도에서 보는 중" : "지도에서 보기"}</button>{sharingLocationGroupId === group.id ? <button type="button" className="stop-sharing" onClick={() => void stopLocationSharing()}>{locationShareState === "starting" ? "권한 확인 중…" : "위치 공유 중지"}</button> : <button type="button" className="start-sharing" onClick={() => void startLocationSharing(group)}>현재 위치 공유</button>}</div>
-          {activeLocationGroupId === group.id && <small className={`live-location-sync ${liveLocationSyncState}`} role="status">{liveLocationSyncLabel}<span>5초마다 자동 확인</span></small>}
+          <div className="live-location-actions"><button type="button" className={activeLocationGroupId === group.id ? "active" : ""} aria-pressed={activeLocationGroupId === group.id} onClick={() => showLiveLocationGroup(group.id)}>{activeLocationGroupId === group.id ? "지도에서 보는 중" : "지도에서 보기"}</button>{sharingLocationGroupId === group.id ? <button type="button" className="stop-sharing" onClick={() => void stopLocationSharing()}>{locationShareState === "starting" ? "권한 확인 중…" : "위치 공유 중지"}</button> : <button type="button" className="start-sharing" onClick={() => void startLocationSharing(group)}>현재 위치 공유</button>}</div>
+          {activeLocationGroupId === group.id && <small className={`live-location-sync ${liveLocationSyncState}`} role="status">{liveLocationSyncLabel}<span>15초마다 자동 확인</span></small>}
           <div className="group-card-actions"><small>{group.role === "owner" ? "생성자만 이 그룹을 삭제할 수 있습니다." : "탈퇴하면 이 그룹의 공유 일정이 보이지 않습니다."}</small><button type="button" className={group.role === "owner" ? "delete-group" : "leave-group"} disabled={groupActionId !== null || groupBusy} onClick={() => void runGroupAction(group)}>{groupActionId === group.id ? "처리 중…" : group.role === "owner" ? "그룹 삭제" : "그룹 탈퇴"}</button></div>
         </article>)}</div>
       </section>

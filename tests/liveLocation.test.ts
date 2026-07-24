@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isLiveLocationFresh, LIVE_LOCATION_POLL_MS, LIVE_LOCATION_TTL_MS, liveLocationExpiresAt, liveLocationInputSchema, resolveVisibleLocationGroupId } from "@/lib/locations/live";
+import { isLiveLocationFresh, LIVE_LOCATION_MIN_PUBLISH_MS, LIVE_LOCATION_POLL_MS, LIVE_LOCATION_TTL_MS, liveLocationExpiresAt, liveLocationInputSchema, shouldPublishLiveLocation } from "@/lib/locations/live";
 
 describe("현재 위치 공유", () => {
   it("정상적인 GPS 좌표와 정확도를 허용한다", () => {
@@ -26,11 +26,11 @@ describe("현재 위치 공유", () => {
     expect(isLiveLocationFresh(expiresAt, new Date(now.getTime() + LIVE_LOCATION_TTL_MS))).toBe(false);
   });
 
-  it("그룹이 하나뿐이면 위치 지도로 자동 선택한다", () => {
-    expect(resolveVisibleLocationGroupId(null, ["group-1"])).toBe("group-1");
-    expect(resolveVisibleLocationGroupId(null, ["group-1", "group-2"])).toBeNull();
-    expect(resolveVisibleLocationGroupId("group-2", ["group-1", "group-2"])).toBe("group-2");
-    expect(resolveVisibleLocationGroupId("removed", ["group-1"])).toBe("group-1");
-    expect(LIVE_LOCATION_POLL_MS).toBe(5_000);
+  it("위치 조회와 저장 호출 간격을 제한한다", () => {
+    expect(LIVE_LOCATION_POLL_MS).toBe(15_000);
+    expect(LIVE_LOCATION_MIN_PUBLISH_MS).toBe(8_000);
+    expect(shouldPublishLiveLocation(null, 1_000)).toBe(true);
+    expect(shouldPublishLiveLocation(1_000, 8_999)).toBe(false);
+    expect(shouldPublishLiveLocation(1_000, 9_000)).toBe(true);
   });
 });

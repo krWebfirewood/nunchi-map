@@ -110,4 +110,4 @@ npm run build
 
 ## 다음 단계
 
-Supabase 데이터베이스를 실제로 연결해 모바일 두 대에서 위치 공유를 검증하고, Vercel 배포 주소를 Kakao JavaScript SDK 도메인에 등록합니다. 이후에는 위치 갱신을 5초 폴링에서 Supabase Realtime으로 바꾸는 최적화를 진행할 수 있습니다.
+Supabase 데이터베이스를 실제로 연결해 모바일 두 대에서 위치 공유를 검증하고, Vercel 배포 주소를 Kakao JavaScript SDK 도메인에 등록합니다. 이후에는 위치 갱신을 15초 폴링에서 Supabase Realtime으로 바꾸는 최적화를 진행할 수 있습니다.

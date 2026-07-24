@@ -319,7 +319,7 @@ export function MapView({
   const liveLocationSummary = liveLocationGroupName && (
     <div className={`live-location-summary ${liveLocationSyncState}`} role="status" aria-live="polite">
       <strong>{liveLocationGroupName} · 현재 위치 {liveLocations.length}명</strong>
-      <span>{liveLocationSyncCopy} · 5초마다 확인</span>
+      <span>{liveLocationSyncCopy} · 15초마다 확인</span>
     </div>
   );
   const dataFeedback = dataState !== "ready" && (

@@ -24,6 +24,8 @@ button:not(:disabled):active { transform:translateY(1px); }
 .session-card>.login-brand-mark { width:58px; height:68px; }
 .session-card h1 { margin:0; font-family:Georgia,serif; font-size:clamp(40px,7vw,68px); line-height:1.05; font-weight:500; letter-spacing:-.045em; }
 .session-card>p:not(.eyebrow,.form-message) { margin:22px 0; color:var(--muted); line-height:1.7; }
+.session-retry-button { min-width:140px; min-height:48px; padding:0 24px; border:0; border-radius:4px; color:#fff; background:var(--ink); font-weight:800; cursor:pointer; }
+.session-retry-button:hover { background:var(--green); }
 .auth-tabs { margin-top:28px; display:grid; grid-template-columns:1fr 1fr; border-bottom:1px solid var(--line); }
 .auth-tabs button { padding:11px; border:0; color:var(--muted); background:transparent; }
 .auth-tabs button.active { color:var(--green); box-shadow:inset 0 -2px var(--green); font-weight:800; }
