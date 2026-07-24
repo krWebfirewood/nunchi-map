@@ -7,7 +7,7 @@ import { LocationSearch, type SelectedLocation } from "@/components/map/Location
 import { MapView, type LiveMapLocation, type MapSchedule } from "@/components/map/MapView";
 import { GettingStarted } from "@/components/onboarding/GettingStarted";
 import { DEMO_LOCATIONS } from "@/lib/locations";
-import { LIVE_LOCATION_POLL_MS, shouldPublishLiveLocation } from "@/lib/locations/live";
+import { isLiveLocationAccurateEnough, LIVE_LOCATION_POLL_MS, shouldPublishLiveLocation } from "@/lib/locations/live";
 import { searchKakaoPlaces } from "@/lib/kakao/maps";
 
 type User = { id: string; nickname: string };
@@ -589,6 +589,11 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
 
   async function publishLiveLocation(groupId: string, position: GeolocationPosition, force = false) {
     latestPositionRef.current = position;
+    if (!isLiveLocationAccurateEnough(position.coords.accuracy)) {
+      setLocationShareState("starting");
+      setLocationShareMessage(`정확한 위치를 찾는 중이에요 · 현재 오차 약 ${Math.round(position.coords.accuracy).toLocaleString("ko-KR")}m · 휴대폰에서 브라우저의 ‘정확한 위치’를 허용해 주세요.`);
+      return;
+    }
     if (locationPublishInFlightRef.current) return;
     if (!force && !shouldPublishLiveLocation(lastLocationPublishedAtRef.current)) return;
     locationPublishInFlightRef.current = true;
@@ -613,7 +618,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
       lastLocationPublishedAtRef.current = publishedAt;
       setSharingLocationGroupId(groupId);
       setLocationShareState("active");
-      setLocationShareMessage("위치 공유 중 · 다른 구성원 지도에는 최대 15초 안에 반영됩니다.");
+      setLocationShareMessage("위치 공유 중 · 다른 구성원 지도에는 최대 15초 안에 반영되며, 브라우저 종료 후 최대 약 2분 안에 사라집니다.");
       setLiveLocations((current) => {
         const ownLocation: LiveMapLocation = {
           userId,
@@ -662,7 +667,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         setLocationShareState("error");
         setLocationShareMessage(error.code === error.PERMISSION_DENIED ? "위치 권한이 필요합니다. 브라우저 설정에서 허용해 주세요." : "현재 위치를 확인하지 못했습니다.");
       },
-      { enableHighAccuracy: true, maximumAge: 5_000, timeout: 15_000 },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 30_000 },
     );
     locationHeartbeatRef.current = window.setInterval(() => {
       const position = latestPositionRef.current;

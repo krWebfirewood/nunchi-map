@@ -231,7 +231,7 @@ export function MapView({
           liveOverlaysRef.current.push(new maps.Circle({
             map,
             center: position,
-            radius: Math.max(10, Math.min(200, location.accuracyMeters)),
+            radius: Math.max(10, Math.min(3_000, location.accuracyMeters)),
             strokeWeight: 2,
             strokeColor: location.isMe ? "#176247" : "#2f5d9b",
             strokeOpacity: 0.85,

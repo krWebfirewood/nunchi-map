@@ -3,6 +3,7 @@ import { z } from "zod";
 export const LIVE_LOCATION_TTL_MS = 2 * 60 * 1000;
 export const LIVE_LOCATION_POLL_MS = 15_000;
 export const LIVE_LOCATION_MIN_PUBLISH_MS = 8_000;
+export const LIVE_LOCATION_MAX_ACCURACY_METERS = 500;
 
 export const liveLocationInputSchema = z.object({
   groupId: z.string().min(1),
@@ -23,4 +24,8 @@ export function isLiveLocationFresh(expiresAt: Date, now = new Date()): boolean 
 
 export function shouldPublishLiveLocation(lastPublishedAt: number | null, now = Date.now()): boolean {
   return lastPublishedAt === null || now - lastPublishedAt >= LIVE_LOCATION_MIN_PUBLISH_MS;
+}
+
+export function isLiveLocationAccurateEnough(accuracyMeters: number): boolean {
+  return Number.isFinite(accuracyMeters) && accuracyMeters <= LIVE_LOCATION_MAX_ACCURACY_METERS;
 }
