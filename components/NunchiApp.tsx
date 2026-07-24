@@ -126,6 +126,21 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const conflictState = conflict ? (conflict.hasConflict ? "conflict" : "safe") : "unchecked";
   const onboardingReady = groupsLoadedFor === userId && schedulesLoadedFor === userId;
 
+  const handleExpiredSession = useCallback(() => {
+    if (locationWatchRef.current !== null) navigator.geolocation?.clearWatch(locationWatchRef.current);
+    if (locationHeartbeatRef.current !== null) window.clearInterval(locationHeartbeatRef.current);
+    locationWatchRef.current = null;
+    locationHeartbeatRef.current = null;
+    latestPositionRef.current = null;
+    sharingLocationGroupRef.current = null;
+    locationPublishInFlightRef.current = false;
+    lastLocationPublishedAtRef.current = null;
+    setSharingLocationGroupId(null);
+    setUserId("");
+    setSessionNickname("");
+    setAuthMessage("로그인이 만료되었습니다. 다시 로그인해 주세요.");
+  }, []);
+
   const loadSchedules = useCallback(async () => {
     if (!userId) return;
     const requestId = ++scheduleRequestRef.current;
@@ -235,6 +250,10 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         const response = await fetch(`/api/live-locations?groupId=${encodeURIComponent(activeLocationGroupId)}`, { cache: "no-store" });
         const data = await readJson<{ locations?: LiveMapLocation[] }>(response);
         if (stopped) return;
+        if (response.status === 401) {
+          handleExpiredSession();
+          return;
+        }
         if (!response.ok) {
           setLiveLocationSyncState("error");
           return;
@@ -259,20 +278,13 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
       window.removeEventListener("focus", refreshWhenVisible);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [activeLocationGroupId, userId]);
+  }, [activeLocationGroupId, handleExpiredSession, userId]);
 
   useEffect(() => {
     const stopOnExit = () => {
       if (locationWatchRef.current !== null) navigator.geolocation?.clearWatch(locationWatchRef.current);
       if (locationHeartbeatRef.current !== null) window.clearInterval(locationHeartbeatRef.current);
-      const groupId = sharingLocationGroupRef.current;
       sharingLocationGroupRef.current = null;
-      if (groupId) void fetch("/api/live-locations", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ groupId }),
-        keepalive: true,
-      });
     };
     window.addEventListener("pagehide", stopOnExit);
     return () => { window.removeEventListener("pagehide", stopOnExit); stopOnExit(); };
@@ -591,7 +603,12 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
           accuracyMeters: position.coords.accuracy,
         }),
       });
-      if (!response.ok) throw new Error("현재 위치를 그룹에 공유하지 못했습니다.");
+      const data = await readJson<{ message?: string }>(response);
+      if (response.status === 401) {
+        handleExpiredSession();
+        throw new Error("로그인이 만료되었습니다. 다시 로그인해 주세요.");
+      }
+      if (!response.ok) throw new Error(data?.message ?? "현재 위치를 그룹에 공유하지 못했습니다.");
       const publishedAt = Date.now();
       lastLocationPublishedAtRef.current = publishedAt;
       setSharingLocationGroupId(groupId);
@@ -630,9 +647,9 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     locationWatchRef.current = navigator.geolocation.watchPosition(
       (position) => {
         if (sharingLocationGroupRef.current !== group.id) return;
-        void publishLiveLocation(group.id, position).catch(() => {
+        void publishLiveLocation(group.id, position).catch((error: unknown) => {
           setLocationShareState("error");
-          setLocationShareMessage("현재 위치 공유에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+          setLocationShareMessage(error instanceof Error ? error.message : "현재 위치 공유에 실패했습니다. 잠시 후 다시 시도해 주세요.");
         });
       },
       (error) => {
