@@ -56,6 +56,7 @@ describe("현재 위치 공유 API", () => {
     const data = await response.json();
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(data.locations).toEqual([expect.objectContaining({ nickname: "지각대장", isMe: true })]);
     expect(mocks.findLocations).toHaveBeenCalledWith(expect.objectContaining({
       where: { groupId: "group-1", expiresAt: { gt: expect.any(Date) } },

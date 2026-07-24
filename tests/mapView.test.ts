@@ -14,6 +14,8 @@ const baseProps = {
   liveLocations: [],
   liveLocationGroupId: null,
   liveLocationGroupName: null,
+  liveLocationSyncState: "idle" as const,
+  liveLocationsUpdatedAt: null,
 };
 
 const schedules: MapSchedule[] = [{
@@ -59,6 +61,8 @@ describe("MapView 시간대 탐색 UI", () => {
       schedules: [],
       liveLocationGroupId: "group-1",
       liveLocationGroupName: "주말 모임",
+      liveLocationSyncState: "ready",
+      liveLocationsUpdatedAt: new Date("2030-01-15T10:00:05.000Z").getTime(),
       liveLocations: [{
         userId: "user-1",
         nickname: "지각대장",
@@ -70,12 +74,14 @@ describe("MapView 시간대 탐색 UI", () => {
       }],
     }));
     expect(html).toContain("주말 모임 · 현재 위치 1명");
+    expect(html).toContain("5초마다 확인");
   });
 
-  it("같은 그룹의 위치가 갱신되어도 지도 화면 범위를 다시 맞추지 않는다", () => {
-    expect(shouldFitLiveLocations("group-1", "group-1", 2)).toBe(false);
-    expect(shouldFitLiveLocations(null, "group-1", 2)).toBe(true);
-    expect(shouldFitLiveLocations("group-1", "group-2", 1)).toBe(true);
-    expect(shouldFitLiveLocations("group-1", "group-2", 0)).toBe(false);
+  it("새 구성원이 나타날 때만 지도 화면 범위를 다시 맞춘다", () => {
+    expect(shouldFitLiveLocations("group-1", "group-1", ["user-1"], ["user-1"])).toBe(false);
+    expect(shouldFitLiveLocations("group-1", "group-1", ["user-1"], ["user-1", "user-2"])).toBe(true);
+    expect(shouldFitLiveLocations(null, "group-1", [], ["user-1"])).toBe(true);
+    expect(shouldFitLiveLocations("group-1", "group-2", ["user-1"], ["user-1"])).toBe(true);
+    expect(shouldFitLiveLocations("group-1", "group-2", ["user-1"], [])).toBe(false);
   });
 });

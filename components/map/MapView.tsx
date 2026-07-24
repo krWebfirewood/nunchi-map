@@ -38,6 +38,8 @@ interface MapViewProps {
   liveLocations: LiveMapLocation[];
   liveLocationGroupId: string | null;
   liveLocationGroupName: string | null;
+  liveLocationSyncState: "idle" | "loading" | "ready" | "error";
+  liveLocationsUpdatedAt: number | null;
 }
 
 function formatMinutes(value: number): string {
@@ -52,8 +54,15 @@ function isExplorerScheduleActive(schedule: MapSchedule, mode: "all" | "time", s
   return mode === "all" || isScheduleActiveInRange(schedule, startMinutes, endMinutes);
 }
 
-export function shouldFitLiveLocations(previousGroupId: string | null, currentGroupId: string | null, locationCount: number): boolean {
-  return currentGroupId !== null && previousGroupId !== currentGroupId && locationCount > 0;
+export function shouldFitLiveLocations(
+  previousGroupId: string | null,
+  currentGroupId: string | null,
+  previousUserIds: string[],
+  currentUserIds: string[],
+): boolean {
+  if (!currentGroupId || currentUserIds.length === 0) return false;
+  if (previousGroupId !== currentGroupId) return true;
+  return currentUserIds.some((userId) => !previousUserIds.includes(userId));
 }
 
 export function MapView({
@@ -68,6 +77,8 @@ export function MapView({
   liveLocations,
   liveLocationGroupId,
   liveLocationGroupName,
+  liveLocationSyncState,
+  liveLocationsUpdatedAt,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<KakaoMap | null>(null);
@@ -75,6 +86,7 @@ export function MapView({
   const liveOverlaysRef = useRef<KakaoOverlay[]>([]);
   const scheduleCameraKeyRef = useRef<string | null>(null);
   const liveCameraGroupRef = useRef<string | null>(null);
+  const liveLocationUserIdsRef = useRef<string[]>([]);
   const [mapReady, setMapReady] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [viewPreference, setViewPreference] = useState<{ date: string; mode: "day" | "input" }>({ date: selectedDate, mode: "day" });
@@ -206,9 +218,11 @@ export function MapView({
 
       if (!liveLocationGroupId) {
         liveCameraGroupRef.current = null;
+        liveLocationUserIdsRef.current = [];
         return;
       }
 
+      const currentUserIds = liveLocations.map((location) => location.userId);
       if (liveLocations.length > 0) {
         const liveBounds = new maps.LatLngBounds();
         for (const location of liveLocations) {
@@ -234,11 +248,12 @@ export function MapView({
           label.append(dot, name, accuracy);
           liveOverlaysRef.current.push(new maps.CustomOverlay({ map, position, content: label, yAnchor: 1.35, zIndex: 10 }));
         }
-        if (shouldFitLiveLocations(liveCameraGroupRef.current, liveLocationGroupId, liveLocations.length)) {
+        if (shouldFitLiveLocations(liveCameraGroupRef.current, liveLocationGroupId, liveLocationUserIdsRef.current, currentUserIds)) {
           map.setBounds(liveBounds, 80, 54, 90, 54);
-          liveCameraGroupRef.current = liveLocationGroupId;
         }
       }
+      liveCameraGroupRef.current = liveLocationGroupId;
+      liveLocationUserIdsRef.current = currentUserIds;
     });
     return () => { cancelled = true; };
   }, [appKey, liveLocationGroupId, liveLocations, mapReady]);
@@ -294,6 +309,19 @@ export function MapView({
     </section>
   );
   const [, selectedMonth, selectedDay] = selectedDate.split("-").map(Number);
+  const liveLocationSyncCopy = liveLocationSyncState === "loading"
+    ? "처음 불러오는 중…"
+    : liveLocationSyncState === "error"
+      ? "갱신 실패 · 자동 재시도 중"
+      : liveLocationsUpdatedAt
+        ? `${new Date(liveLocationsUpdatedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })} 갱신`
+        : "위치 보기를 준비하고 있어요";
+  const liveLocationSummary = liveLocationGroupName && (
+    <div className={`live-location-summary ${liveLocationSyncState}`} role="status" aria-live="polite">
+      <strong>{liveLocationGroupName} · 현재 위치 {liveLocations.length}명</strong>
+      <span>{liveLocationSyncCopy} · 5초마다 확인</span>
+    </div>
+  );
   const dataFeedback = dataState !== "ready" && (
     <div className={`map-data-state ${dataState}`} role={dataState === "error" ? "alert" : "status"} aria-live="polite">
       <i aria-hidden="true" />
@@ -310,7 +338,7 @@ export function MapView({
           <div className="map-place-label"><strong>{locationName}</strong><span>{latitude.toFixed(4)}, {longitude.toFixed(4)}</span></div>
           {mapControls}
           <div className="map-mode-badge">{loadError ? "Kakao 지도 연결 실패 · 목업 모드" : "지도 목업 모드"}</div>
-          {liveLocationGroupName && <div className="live-location-summary">{liveLocationGroupName} · 현재 위치 {liveLocations.length}명</div>}
+          {liveLocationSummary}
           <div className="map-radius-label">확인 반경 {(radiusMeters / 1000).toFixed(1)}km</div>
         </div>
         {timeExplorer}
@@ -323,7 +351,7 @@ export function MapView({
         <div ref={containerRef} className="kakao-map" aria-label={viewMode === "day" ? `선택한 날짜의 일정 ${schedules.length}개 지도` : `${locationName} Kakao 지도`} />
         {mapControls}
         <div className="map-mode-badge">Kakao 지도 · 비공개 그룹 공유</div>
-        {liveLocationGroupName && <div className="live-location-summary">{liveLocationGroupName} · 현재 위치 {liveLocations.length}명</div>}
+        {liveLocationSummary}
         {viewMode === "day" ? (
           <div className="map-zone-legend"><span><i className="own" />내 일정 {schedules.filter((schedule) => schedule.source === "own").length}</span><span><i className="group" />그룹 일정 {schedules.filter((schedule) => schedule.source === "group").length}</span><small>{timeMode === "all" ? "진한 원: 하루 전체" : `${formatMinutes(explorerStartMinutes)}–${formatMinutes(explorerEndMinutes)} 활성 영역 ${activeScheduleCount}개`}</small></div>
         ) : (

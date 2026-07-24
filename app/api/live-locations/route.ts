@@ -34,13 +34,16 @@ export async function GET(request: Request) {
     orderBy: { updatedAt: "desc" },
   });
 
-  return Response.json({
-    locations: locations.map(({ user: locationUser, ...location }) => ({
-      ...location,
-      nickname: locationUser.nickname,
-      isMe: location.userId === user.id,
-    })),
-  });
+  return Response.json(
+    {
+      locations: locations.map(({ user: locationUser, ...location }) => ({
+        ...location,
+        nickname: locationUser.nickname,
+        isMe: location.userId === user.id,
+      })),
+    },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 export async function PUT(request: Request) {
