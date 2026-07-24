@@ -7,7 +7,7 @@ import { LocationSearch, type SelectedLocation } from "@/components/map/Location
 import { MapView, type LiveMapLocation, type MapSchedule } from "@/components/map/MapView";
 import { GettingStarted } from "@/components/onboarding/GettingStarted";
 import { DEMO_LOCATIONS } from "@/lib/locations";
-import { isLiveLocationAccurateEnough, LIVE_LOCATION_POLL_MS, shouldPublishLiveLocation } from "@/lib/locations/live";
+import { LIVE_LOCATION_POLL_MS, shouldPublishLiveLocation } from "@/lib/locations/live";
 import { searchKakaoPlaces } from "@/lib/kakao/maps";
 
 type User = { id: string; nickname: string };
@@ -71,8 +71,6 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
   const [liveLocationsUpdatedAt, setLiveLocationsUpdatedAt] = useState<number | null>(null);
   const [locationShareState, setLocationShareState] = useState<"idle" | "starting" | "active" | "error">("idle");
   const [locationShareMessage, setLocationShareMessage] = useState("");
-  const [locationAccuracyHelp, setLocationAccuracyHelp] = useState(false);
-  const [locationAccuracyRetrying, setLocationAccuracyRetrying] = useState(false);
   const locationWatchRef = useRef<number | null>(null);
   const locationHeartbeatRef = useRef<number | null>(null);
   const latestPositionRef = useRef<GeolocationPosition | null>(null);
@@ -138,8 +136,6 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     locationPublishInFlightRef.current = false;
     lastLocationPublishedAtRef.current = null;
     setSharingLocationGroupId(null);
-    setLocationAccuracyHelp(false);
-    setLocationAccuracyRetrying(false);
     setUserId("");
     setSessionNickname("");
     setAuthMessage("로그인이 만료되었습니다. 다시 로그인해 주세요.");
@@ -593,12 +589,6 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
 
   async function publishLiveLocation(groupId: string, position: GeolocationPosition, force = false) {
     latestPositionRef.current = position;
-    if (!isLiveLocationAccurateEnough(position.coords.accuracy)) {
-      setLocationShareState("starting");
-      setLocationAccuracyHelp(true);
-      setLocationShareMessage(`정확한 위치를 찾는 중이에요 · 현재 오차 약 ${Math.round(position.coords.accuracy).toLocaleString("ko-KR")}m · 휴대폰에서 브라우저의 ‘정확한 위치’를 허용해 주세요.`);
-      return;
-    }
     if (locationPublishInFlightRef.current) return;
     if (!force && !shouldPublishLiveLocation(lastLocationPublishedAtRef.current)) return;
     locationPublishInFlightRef.current = true;
@@ -623,7 +613,6 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
       lastLocationPublishedAtRef.current = publishedAt;
       setSharingLocationGroupId(groupId);
       setLocationShareState("active");
-      setLocationAccuracyHelp(false);
       setLocationShareMessage("위치 공유 중 · 다른 구성원 지도에는 최대 15초 안에 반영되며, 브라우저 종료 후 최대 약 2분 안에 사라집니다.");
       setLiveLocations((current) => {
         const ownLocation: LiveMapLocation = {
@@ -652,7 +641,6 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     showLiveLocationGroup(group.id);
     setSharingLocationGroupId(group.id);
     setLocationShareState("starting");
-    setLocationAccuracyHelp(false);
     setLocationShareMessage("위치 권한을 확인하고 있어요…");
     sharingLocationGroupRef.current = group.id;
 
@@ -672,10 +660,9 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         sharingLocationGroupRef.current = null;
         setSharingLocationGroupId(null);
         setLocationShareState("error");
-        setLocationAccuracyHelp(error.code === error.PERMISSION_DENIED);
         setLocationShareMessage(error.code === error.PERMISSION_DENIED ? "위치 권한이 필요합니다. 브라우저 설정에서 허용해 주세요." : "현재 위치를 확인하지 못했습니다.");
       },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 30_000 },
+      { enableHighAccuracy: true, maximumAge: 5_000, timeout: 15_000 },
     );
     locationHeartbeatRef.current = window.setInterval(() => {
       const position = latestPositionRef.current;
@@ -697,8 +684,6 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
     sharingLocationGroupRef.current = null;
     setSharingLocationGroupId(null);
     setLocationShareState("idle");
-    setLocationAccuracyHelp(false);
-    setLocationAccuracyRetrying(false);
     setLocationShareMessage(groupId ? "현재 위치 공유를 중지했습니다." : "");
     if (groupId) {
       await fetch("/api/live-locations", {
@@ -710,31 +695,6 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
         setLiveLocations((current) => current.filter((location) => location.userId !== userId));
       }
     }
-  }
-
-  function requestAccurateLocation() {
-    const groupId = sharingLocationGroupRef.current;
-    if (!groupId || !navigator.geolocation || locationAccuracyRetrying) return;
-    setLocationAccuracyRetrying(true);
-    setLocationShareState("starting");
-    setLocationShareMessage("GPS에서 정확한 위치를 다시 확인하고 있어요…");
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        void publishLiveLocation(groupId, position, true)
-          .catch((error: unknown) => {
-            setLocationShareState("error");
-            setLocationShareMessage(error instanceof Error ? error.message : "정확한 위치를 다시 확인하지 못했습니다.");
-          })
-          .finally(() => setLocationAccuracyRetrying(false));
-      },
-      (error) => {
-        setLocationAccuracyRetrying(false);
-        setLocationAccuracyHelp(true);
-        setLocationShareState("error");
-        setLocationShareMessage(error.code === error.PERMISSION_DENIED ? "사이트 위치 권한을 초기화한 뒤 다시 허용해 주세요." : "정확한 위치를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
-      },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 30_000 },
-    );
   }
 
   function showLiveLocationGroup(groupId: string) {
@@ -897,7 +857,7 @@ export function NunchiApp({ initialDate }: { initialDate: string }) {
           <div className="group-form"><label>초대 코드<input value={inviteCode} onChange={(event) => setInviteCode(event.target.value.toUpperCase())} placeholder="예: NUNCHI" /></label><button type="button" disabled={groupBusy} onClick={() => void joinGroup()}>그룹 참여</button></div>
           {groupMessage && <p className="form-message" role="status">{groupMessage}</p>}
         </div>
-        {locationShareMessage && <div className={`location-share-message ${locationShareState}`}><p role="status">{locationShareMessage}</p>{locationAccuracyHelp && <div className="location-accuracy-help"><button type="button" disabled={locationAccuracyRetrying} onClick={requestAccurateLocation}>{locationAccuracyRetrying ? "확인 중…" : "정확도 다시 확인"}</button><details><summary>권한 창이 다시 나오지 않나요?</summary><p>주소창의 사이트 정보 → 권한 → 위치를 초기화한 뒤 이 버튼을 다시 누르고 `정확한 위치`를 선택해 주세요. 웹페이지는 브라우저 권한을 직접 변경할 수 없습니다.</p></details></div>}</div>}
+        {locationShareMessage && <p className={`location-share-message ${locationShareState}`} role="status">{locationShareMessage}</p>}
         <div className="group-list">{groups.length === 0 ? <div className="empty-state empty-action"><strong>아직 연결된 그룹이 없어요.</strong><span>새 그룹을 만들거나 받은 초대 코드로 참여하세요.</span><button type="button" onClick={focusGroupSetup}>그룹 만들기</button></div> : groups.map((group) => <article key={group.id} className={`${group.role === "owner" ? "is-owner" : ""} ${activeLocationGroupId === group.id ? "is-location-visible" : ""}`}>
           <div className="group-card-heading"><div><strong>{group.name}</strong><span>익명 구성원 {group.memberCount}명</span></div><em>{group.role === "owner" ? "내가 만든 그룹" : "참여한 그룹"}</em></div>
           <div className="group-invite"><span>초대 코드</span><div><code>{group.inviteCode}</code><button type="button" disabled={groupActionId !== null} onClick={() => void copyInviteCode(group)} aria-label={`${group.name} 초대 코드 복사`}>{copiedGroupId === group.id ? "복사됨" : "복사"}</button></div></div>

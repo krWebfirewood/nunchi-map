@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isLiveLocationAccurateEnough, isLiveLocationFresh, LIVE_LOCATION_MAX_ACCURACY_METERS, LIVE_LOCATION_MIN_PUBLISH_MS, LIVE_LOCATION_POLL_MS, LIVE_LOCATION_TTL_MS, liveLocationExpiresAt, liveLocationInputSchema, shouldPublishLiveLocation } from "@/lib/locations/live";
+import { isLiveLocationFresh, LIVE_LOCATION_MIN_PUBLISH_MS, LIVE_LOCATION_POLL_MS, LIVE_LOCATION_TTL_MS, liveLocationExpiresAt, liveLocationInputSchema, shouldPublishLiveLocation } from "@/lib/locations/live";
 
 describe("현재 위치 공유", () => {
   it("정상적인 GPS 좌표와 정확도를 허용한다", () => {
@@ -32,13 +32,5 @@ describe("현재 위치 공유", () => {
     expect(shouldPublishLiveLocation(null, 1_000)).toBe(true);
     expect(shouldPublishLiveLocation(1_000, 8_999)).toBe(false);
     expect(shouldPublishLiveLocation(1_000, 9_000)).toBe(true);
-  });
-
-  it("오차가 큰 모바일 위치는 정확도가 개선될 때까지 공유하지 않는다", () => {
-    expect(LIVE_LOCATION_MAX_ACCURACY_METERS).toBe(500);
-    expect(isLiveLocationAccurateEnough(108)).toBe(true);
-    expect(isLiveLocationAccurateEnough(500)).toBe(true);
-    expect(isLiveLocationAccurateEnough(501)).toBe(false);
-    expect(isLiveLocationAccurateEnough(2_000)).toBe(false);
   });
 });
